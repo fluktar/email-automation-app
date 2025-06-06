@@ -9,11 +9,12 @@ DATABASE_CONFIG = {
 }
 
 EMAIL_CONFIG = {
-    'smtp_server': 'smtp.example.com',
+    'smtp_server': 'smtp.purelymail.com',
     'smtp_port': 587,
     'username': 'office@uroboros.online',
     'password': 'Sojokotojo1@3',
-    'from_address': 'office@uroboros.online'
+    'from_address': 'office@uroboros.online',
+    'imap_server': 'imap.purelymail.com',
 }
 
 REMINDER_SETTINGS = {

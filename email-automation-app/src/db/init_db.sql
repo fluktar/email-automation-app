@@ -87,3 +87,14 @@ BEGIN
         CREATE UNIQUE INDEX email_templates_template_type_campaign_id_key ON email_templates(template_type, campaign_id);
     END IF;
 END$$;
+
+-- Tabela statusów wysyłek dla kontaktów w kampaniach
+CREATE TABLE IF NOT EXISTS campaign_progress (
+    id SERIAL PRIMARY KEY,
+    campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+    contact_id INTEGER REFERENCES email_addresses(id) ON DELETE CASCADE,
+    current_stage VARCHAR(50) NOT NULL, -- np. 'not_sent', 'welcome_sent', 'reminder_sent', 'last_offer_sent', 'responded'
+    last_send_date TIMESTAMP,
+    response_date TIMESTAMP,
+    UNIQUE (campaign_id, contact_id)
+);

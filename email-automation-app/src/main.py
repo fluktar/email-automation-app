@@ -296,9 +296,186 @@ class EmailAutomationApp(tk.Tk):
                 self.attachment_labels[typ]['text'] = 'Brak załącznika'
 
     def init_analytics_tab(self):
-        label = ttk.Label(self.tab_analytics, text='Moduł analityczny')
-        label.pack(pady=10)
-        # Tu dodamy dalszą logikę i widżety
+        from db.campaigns_manager import CampaignsManager
+        from db.campaign_progress_manager import CampaignProgressManager
+        self.analytics_campaigns_manager = CampaignsManager()
+        self.analytics_progress_manager = CampaignProgressManager()
+
+        main_frame = ttk.Frame(self.tab_analytics)
+        main_frame.pack(fill='both', expand=True)
+        left_frame = ttk.Frame(main_frame)
+        left_frame.pack(side='left', fill='y')
+        right_frame = ttk.Frame(main_frame)
+        right_frame.pack(side='left', fill='both', expand=True)
+
+        # Lista kampanii
+        ttk.Label(left_frame, text='Kampanie:').pack(pady=5)
+        self.analytics_campaign_listbox = tk.Listbox(left_frame, width=25)
+        self.analytics_campaign_listbox.pack(padx=5, pady=5, fill='y', expand=True)
+        self.analytics_campaign_listbox.bind('<<ListboxSelect>>', self.on_analytics_campaign_select)
+        self.analytics_campaigns = []
+        self.selected_analytics_campaign_id = None
+        self.load_analytics_campaigns()
+
+        # Tabela postępu
+        columns = ('email', 'company', 'etap', 'ostatnia wysyłka', 'odpowiedź')
+        self.progress_tree = ttk.Treeview(right_frame, columns=columns, show='headings')
+        for col in columns:
+            self.progress_tree.heading(col, text=col)
+        self.progress_tree.pack(fill='both', expand=True, padx=10, pady=10)
+
+        # Przycisk uruchamiania wysyłki
+        self.send_button = ttk.Button(right_frame, text='Uruchom wysyłkę', command=self.run_campaign_send, state='disabled')
+        self.send_button.pack(pady=5)
+        # Przycisk sprawdzania odpowiedzi
+        self.check_resp_button = ttk.Button(right_frame, text='Sprawdź odpowiedzi', command=self.check_responses, state='disabled')
+        self.check_resp_button.pack(pady=5)
+
+    def load_analytics_campaigns(self):
+        self.analytics_campaigns = self.analytics_campaigns_manager.get_campaigns()
+        self.analytics_campaign_listbox.delete(0, 'end')
+        for _id, name in self.analytics_campaigns:
+            self.analytics_campaign_listbox.insert('end', name)
+
+    def on_analytics_campaign_select(self, event):
+        selection = self.analytics_campaign_listbox.curselection()
+        if selection:
+            idx = selection[0]
+            camp_id, camp_name = self.analytics_campaigns[idx]
+            self.selected_analytics_campaign_id = camp_id
+            self.load_campaign_progress()
+            self.send_button.config(state='normal')
+            self.check_resp_button.config(state='normal')
+        else:
+            self.selected_analytics_campaign_id = None
+            self.progress_tree.delete(*self.progress_tree.get_children())
+            self.send_button.config(state='disabled')
+            self.check_resp_button.config(state='disabled')
+
+    def load_campaign_progress(self):
+        self.progress_tree.delete(*self.progress_tree.get_children())
+        if not self.selected_analytics_campaign_id:
+            return
+        rows = self.analytics_progress_manager.get_progress_for_campaign(self.selected_analytics_campaign_id)
+        for _id, email, company, stage, last_send, response in rows:
+            self.progress_tree.insert('', 'end', values=(email, company, stage, str(last_send) if last_send else '', str(response) if response else ''))
+
+    def run_campaign_send(self):
+        from tkinter import messagebox
+        from db.email_templates_manager import EmailTemplatesManager
+        from db.contacts_manager import ContactsManager
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        from email.mime.base import MIMEBase
+        from email import encoders
+        import datetime
+        import traceback
+        # Konfiguracja SMTP z config.py
+        import sys
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+        from config import EMAIL_CONFIG
+
+        if not self.selected_analytics_campaign_id:
+            messagebox.showerror('Błąd', 'Najpierw wybierz kampanię!')
+            return
+
+        # Pobierz kontakty
+        contacts_manager = ContactsManager()
+        contacts = contacts_manager.get_contacts()
+        # Pobierz postęp
+        progress_rows = self.analytics_progress_manager.get_progress_for_campaign(self.selected_analytics_campaign_id)
+        progressed_emails = {row[1]: row for row in progress_rows}
+
+        # Pobierz szablon powitalny
+        templates_manager = EmailTemplatesManager()
+        tpl = templates_manager.get_template('welcome', self.selected_analytics_campaign_id)
+        if not tpl:
+            messagebox.showerror('Błąd', 'Brak szablonu powitalnego dla tej kampanii!')
+            return
+        subject, body, _, attachment_path = tpl
+
+        sent_count = 0
+        for contact in contacts:
+            contact_id, email, company, address, phone, contact_name = contact
+            # Jeśli kontakt nie ma postępu lub jest na etapie 'not_sent', wyślij powitalną
+            row = progressed_emails.get(email)
+            if not row or row[3] == 'not_sent':
+                try:
+                    # Przygotuj wiadomość
+                    msg = MIMEMultipart()
+                    msg['From'] = EMAIL_CONFIG['from_address']
+                    msg['To'] = email
+                    msg['Subject'] = subject
+                    msg.attach(MIMEText(body, 'plain'))
+                    # Załącznik
+                    if attachment_path and os.path.isfile(attachment_path):
+                        with open(attachment_path, 'rb') as f:
+                            part = MIMEBase('application', 'octet-stream')
+                            part.set_payload(f.read())
+                        encoders.encode_base64(part)
+                        part.add_header('Content-Disposition', f'attachment; filename={os.path.basename(attachment_path)}')
+                        msg.attach(part)
+                    # Wyślij email
+                    server = smtplib.SMTP(EMAIL_CONFIG['smtp_server'], EMAIL_CONFIG['smtp_port'])
+                    server.starttls()
+                    server.login(EMAIL_CONFIG['username'], EMAIL_CONFIG['password'])
+                    server.sendmail(EMAIL_CONFIG['from_address'], email, msg.as_string())
+                    server.quit()
+                    # Zaktualizuj postęp
+                    self.analytics_progress_manager.add_or_update_progress(
+                        self.selected_analytics_campaign_id, contact_id, 'welcome_sent', datetime.datetime.now()
+                    )
+                    sent_count += 1
+                except Exception as e:
+                    traceback.print_exc()
+                    messagebox.showerror('Błąd wysyłki', f'Nie udało się wysłać do {email}: {e}')
+        self.load_campaign_progress()
+        messagebox.showinfo('Wysyłka', f'Wysłano {sent_count} powitalnych wiadomości!')
+
+    def check_responses(self):
+        from imapclient import IMAPClient
+        import email
+        import datetime
+        from db.campaign_progress_manager import CampaignProgressManager
+        import sys
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+        from config import EMAIL_CONFIG
+
+        if not self.selected_analytics_campaign_id:
+            from tkinter import messagebox
+            messagebox.showerror('Błąd', 'Najpierw wybierz kampanię!')
+            return
+
+        # Pobierz postęp
+        progress_rows = self.analytics_progress_manager.get_progress_for_campaign(self.selected_analytics_campaign_id)
+        # Mapuj email -> (contact_id, current_stage)
+        email_to_contact = {}
+        for row in progress_rows:
+            _id, email_addr, company, stage, last_send, response = row
+            if stage != 'responded':
+                email_to_contact[email_addr.lower()] = (_id, stage)
+
+        # Połącz z IMAP
+        imap_host = EMAIL_CONFIG.get('imap_server', EMAIL_CONFIG['smtp_server'])
+        imap_user = EMAIL_CONFIG['username']
+        imap_pass = EMAIL_CONFIG['password']
+        with IMAPClient(imap_host, ssl=True) as server:
+            server.login(imap_user, imap_pass)
+            server.select_folder('INBOX')
+            messages = server.search(['UNSEEN'])
+            for uid, message_data in server.fetch(messages, ['ENVELOPE', 'RFC822']).items():
+                envelope = message_data[b'ENVELOPE']
+                from_addr = envelope.from_[0].mailbox.decode() + '@' + envelope.from_[0].host.decode()
+                if from_addr.lower() in email_to_contact:
+                    # Zaktualizuj postęp na 'responded'
+                    contact_id = _id = email_to_contact[from_addr.lower()][0]
+                    self.analytics_progress_manager.add_or_update_progress(
+                        self.selected_analytics_campaign_id, contact_id, 'responded', response_date=datetime.datetime.now()
+                    )
+        self.load_campaign_progress()
+        from tkinter import messagebox
+        messagebox.showinfo('Odpowiedzi', 'Sprawdzono odpowiedzi w skrzynce odbiorczej!')
 
 if __name__ == '__main__':
     app = EmailAutomationApp()
