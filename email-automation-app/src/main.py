@@ -99,8 +99,12 @@ class EmailAutomationApp(tk.Tk):
         from tkinter import filedialog, messagebox
         from db.campaign_steps_manager import CampaignStepsManager
         from db.campaigns_manager import CampaignsManager
+        from db.attachments_manager import AttachmentsManager
+        from db.attachment_uploader import AttachmentUploader
         self.steps_manager = CampaignStepsManager()
         self.campaigns_manager = CampaignsManager()
+        self.attachments_manager = AttachmentsManager()
+        self.attachment_uploader = AttachmentUploader()
 
         main_frame = ttk.Frame(self.tab_messages)
         main_frame.pack(fill='both', expand=True)
@@ -144,9 +148,18 @@ class EmailAutomationApp(tk.Tk):
         self.subject_entry = ttk.Entry(self.template_form_frame, width=60)
         self.body_text = tk.Text(self.template_form_frame, wrap='word')
         self.days_entry = ttk.Entry(self.template_form_frame, width=10)
-        self.attachment_label = ttk.Label(self.template_form_frame, text='Brak załącznika', width=40)
-        self.attachment_path = None
-        self.attachment_btn = ttk.Button(self.template_form_frame, text='Wybierz załącznik', command=self.choose_attachment_single)
+        # --- Sekcja załączników ---
+        self.attachments_section = ttk.Frame(self.template_form_frame)
+        self.attachments_label = ttk.Label(self.attachments_section, text='Załączniki:')
+        self.attachments_label.pack(anchor='w')
+        self.attachments_listbox = tk.Listbox(self.attachments_section, width=50, height=8)
+        self.attachments_listbox.pack(fill='x', pady=(2,2))
+        btns_frame = ttk.Frame(self.attachments_section)
+        btns_frame.pack(anchor='w', pady=2)
+        self.add_attachment_btn = ttk.Button(btns_frame, text='Dodaj załącznik', command=self.add_attachment)
+        self.add_attachment_btn.pack(side='left', padx=2)
+        self.remove_attachment_btn = ttk.Button(btns_frame, text='Usuń załącznik', command=self.remove_attachment)
+        self.remove_attachment_btn.pack(side='left', padx=2)
         self.save_btn = ttk.Button(self.template_form_frame, text='Zapisz', command=self.save_current_step)
         self.disable_template_form()
 
@@ -246,14 +259,51 @@ class EmailAutomationApp(tk.Tk):
         self.body_text.pack(fill='both', expand=True, pady=2)
         ttk.Label(self.template_form_frame, text='Dni po poprzedniej:').pack(anchor='w')
         self.days_entry.pack(anchor='w', pady=2)
-        attach_frame = ttk.Frame(self.template_form_frame)
-        attach_frame.pack(anchor='w', pady=2)
-        self.attachment_btn.pack(in_=attach_frame, side='left')
-        self.attachment_label.pack(in_=attach_frame, side='left', padx=5)
-        self.save_btn.pack(pady=5)
+        # --- Sekcja załączników ---
+        self.attachments_section.pack(fill='x', pady=(10,0))
+        self.save_btn.pack(pady=10)
         self.template_form_frame.pack(fill='both', expand=True)
         self.load_current_step()
+        self.load_attachments()
         self.enable_template_form()
+
+    def load_attachments(self):
+        self.attachments_listbox.delete(0, 'end')
+        self.current_attachments = []
+        if not self.current_step_id:
+            return
+        attachments = self.attachments_manager.get_attachments(self.current_step_id)
+        for att in attachments:
+            att_id, filename, remote_path = att
+            self.attachments_listbox.insert('end', filename)
+            self.current_attachments.append({'id': att_id, 'filename': filename, 'remote_path': remote_path})
+
+    def add_attachment(self):
+        if not self.current_step_id:
+            self.show_message_status('Najpierw wybierz krok!', 'red')
+            return
+        from tkinter import filedialog
+        file_path = filedialog.askopenfilename(filetypes=[('PDF files', '*.pdf'), ('All files', '*.*')])
+        if not file_path:
+            return
+        filename = os.path.basename(file_path)
+        try:
+            remote_path = self.attachment_uploader.upload(file_path, filename)
+            self.attachments_manager.add_attachment(self.current_step_id, filename, remote_path)
+            self.show_message_status('Załącznik dodany!')
+            self.load_attachments()
+        except Exception as e:
+            self.show_message_status(f'Błąd: {e}', 'red')
+
+    def remove_attachment(self):
+        selection = self.attachments_listbox.curselection()
+        if not selection:
+            return
+        idx = selection[0]
+        att = self.current_attachments[idx]
+        self.attachments_manager.remove_attachment(att['id'])
+        self.show_message_status('Załącznik usunięty!')
+        self.load_attachments()
 
     def disable_template_form(self):
         for widget in self.template_form_frame.winfo_children():
@@ -262,8 +312,7 @@ class EmailAutomationApp(tk.Tk):
         self.subject_entry.delete(0, 'end')
         self.body_text.delete('1.0', 'end')
         self.days_entry.delete(0, 'end')
-        self.attachment_label['text'] = 'Brak załącznika'
-        self.attachment_path = None
+        self.attachments_listbox.delete(0, 'end')
 
     def enable_template_form(self):
         self.template_form_frame.pack(fill='both', expand=True)
@@ -273,8 +322,6 @@ class EmailAutomationApp(tk.Tk):
             self.subject_entry.delete(0, 'end')
             self.body_text.delete('1.0', 'end')
             self.days_entry.delete(0, 'end')
-            self.attachment_label['text'] = 'Brak załącznika'
-            self.attachment_path = None
             return
         # Pobierz dane kroku z self.steps
         step = next((s for s in self.steps if s[0] == self.current_step_id), None)
@@ -282,22 +329,14 @@ class EmailAutomationApp(tk.Tk):
             self.subject_entry.delete(0, 'end')
             self.body_text.delete('1.0', 'end')
             self.days_entry.delete(0, 'end')
-            self.attachment_label['text'] = 'Brak załącznika'
-            self.attachment_path = None
             return
-        _, _, name, subject, body, days, attachment_path = step
+        _, _, name, subject, body, days, _ = step
         self.subject_entry.delete(0, 'end')
         self.subject_entry.insert(0, subject or '')
         self.body_text.delete('1.0', 'end')
         self.body_text.insert('1.0', body or '')
         self.days_entry.delete(0, 'end')
         self.days_entry.insert(0, str(days) if days is not None else '')
-        if attachment_path:
-            self.attachment_path = attachment_path
-            self.attachment_label['text'] = os.path.basename(attachment_path)
-        else:
-            self.attachment_path = None
-            self.attachment_label['text'] = 'Brak załącznika'
 
     def save_current_step(self):
         if not self.current_step_id:
@@ -309,20 +348,13 @@ class EmailAutomationApp(tk.Tk):
             days = int(self.days_entry.get().strip())
         except ValueError:
             days = None
-        attachment_path = self.attachment_path
-        self.steps_manager.update_step(self.current_step_id, subject, body, days, attachment_path)
+        # attachment_path nie jest już używany
+        self.steps_manager.update_step(self.current_step_id, subject, body, days, None)
         self.show_message_status('Krok został zapisany!')
         self.load_steps()
 
     def choose_attachment_single(self):
-        from tkinter import filedialog
-        file_path = filedialog.askopenfilename(filetypes=[('PDF files', '*.pdf'), ('All files', '*.*')])
-        if file_path:
-            self.attachment_path = file_path
-            self.attachment_label['text'] = os.path.basename(file_path)
-        else:
-            self.attachment_path = None
-            self.attachment_label['text'] = 'Brak załącznika'
+        pass  # NIEUŻYWANE, zostawiamy pustą dla kompatybilności
 
     def init_analytics_tab(self):
         from db.campaigns_manager import CampaignsManager
@@ -423,36 +455,42 @@ class EmailAutomationApp(tk.Tk):
         if not tpl:
             messagebox.showerror('Błąd', 'Brak szablonu powitalnego dla tej kampanii!')
             return
-        subject, body, _, attachment_path = tpl
+        subject, body, *_ = tpl
+
+        # Pobierz załączniki dla kroku powitalnego
+        steps = self.steps_manager.get_steps(self.selected_analytics_campaign_id)
+        if not steps:
+            messagebox.showerror('Błąd', 'Brak kroków w tej kampanii!')
+            return
+        welcome_step_id = steps[0][0]
+        attachments = self.attachments_manager.get_attachments(welcome_step_id)
 
         sent_count = 0
         for contact in contacts:
             contact_id, email, company, address, phone, contact_name = contact
-            # Jeśli kontakt nie ma postępu lub jest na etapie 'not_sent', wyślij powitalną
             row = progressed_emails.get(email)
             if not row or row[3] == 'not_sent':
                 try:
-                    # Przygotuj wiadomość
                     msg = MIMEMultipart()
                     msg['From'] = EMAIL_CONFIG['from_address']
                     msg['To'] = email
                     msg['Subject'] = subject
                     msg.attach(MIMEText(body, 'plain'))
-                    # Załącznik
-                    if attachment_path and os.path.isfile(attachment_path):
-                        with open(attachment_path, 'rb') as f:
-                            part = MIMEBase('application', 'octet-stream')
-                            part.set_payload(f.read())
-                        encoders.encode_base64(part)
-                        part.add_header('Content-Disposition', f'attachment; filename={os.path.basename(attachment_path)}')
-                        msg.attach(part)
-                    # Wyślij email
+                    # Dołącz wszystkie załączniki z bazy
+                    for att in attachments:
+                        _, filename, remote_path = att
+                        if os.path.isfile(remote_path):
+                            with open(remote_path, 'rb') as f:
+                                part = MIMEBase('application', 'octet-stream')
+                                part.set_payload(f.read())
+                            encoders.encode_base64(part)
+                            part.add_header('Content-Disposition', f'attachment; filename={filename}')
+                            msg.attach(part)
                     server = smtplib.SMTP(EMAIL_CONFIG['smtp_server'], EMAIL_CONFIG['smtp_port'])
                     server.starttls()
                     server.login(EMAIL_CONFIG['username'], EMAIL_CONFIG['password'])
                     server.sendmail(EMAIL_CONFIG['from_address'], email, msg.as_string())
                     server.quit()
-                    # Zaktualizuj postęp
                     self.analytics_progress_manager.add_or_update_progress(
                         self.selected_analytics_campaign_id, contact_id, 'welcome_sent', datetime.datetime.now()
                     )
