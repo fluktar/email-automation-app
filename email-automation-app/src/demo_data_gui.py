@@ -46,15 +46,19 @@ class DemoDataApp(tk.Tk):
     def create_widgets(self):
         frame = tk.Frame(self)
         frame.pack(expand=True)
+        self.status_label = tk.Label(frame, text='', fg='blue')
+        self.status_label.pack(pady=5)
         btn_generate = tk.Button(frame, text='Generuj 20 kontaktów demo', width=35, command=self.generate_contacts)
         btn_generate.pack(pady=10)
         btn_clear = tk.Button(frame, text='Wyczyść wszystkie kontakty', width=35, command=self.clear_contacts)
         btn_clear.pack(pady=10)
 
     def generate_contacts(self):
+        self.status_label.config(text='Generowanie kontaktów...')
+        self.update_idletasks()
         conn, tunnel = self._get_connection()
         cur = conn.cursor()
-        for _ in range(20):
+        for i in range(20):
             email = self.fake.unique.email()
             company = self.fake.company()
             address = self.fake.address().replace('\n', ' ')
@@ -65,13 +69,18 @@ class DemoDataApp(tk.Tk):
                 VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (email) DO NOTHING;
             ''', (email, company, address, phone, contact_name))
+            self.status_label.config(text=f'Wygenerowano: {i+1}/20')
+            self.update_idletasks()
         conn.commit()
         cur.close()
         conn.close()
         tunnel.stop()
-        messagebox.showinfo('Sukces', 'Dodano 200 przykładowych kontaktów do bazy!')
+        self.status_label.config(text='')
+        messagebox.showinfo('Sukces', 'Dodano 20 przykładowych kontaktów do bazy!')
 
     def clear_contacts(self):
+        self.status_label.config(text='Czyszczenie kontaktów...')
+        self.update_idletasks()
         conn, tunnel = self._get_connection()
         cur = conn.cursor()
         cur.execute('DELETE FROM email_addresses')
@@ -79,6 +88,7 @@ class DemoDataApp(tk.Tk):
         cur.close()
         conn.close()
         tunnel.stop()
+        self.status_label.config(text='')
         messagebox.showinfo('Sukces', 'Wyczyszczono wszystkie kontakty z bazy!')
 
 if __name__ == '__main__':

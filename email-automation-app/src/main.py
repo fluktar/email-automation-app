@@ -3,6 +3,7 @@
 import tkinter as tk
 from tkinter import ttk
 import os
+import threading
 
 class EmailAutomationApp(tk.Tk):
     def __init__(self):
@@ -393,6 +394,10 @@ class EmailAutomationApp(tk.Tk):
         self.check_resp_button = ttk.Button(right_frame, text='Sprawdź odpowiedzi', command=self.check_responses, state='disabled')
         self.check_resp_button.pack(pady=5)
 
+        # Etykieta statusu wysyłki
+        self.send_status_label = ttk.Label(right_frame, text='', foreground='blue')
+        self.send_status_label.pack(pady=2)
+
     def load_analytics_campaigns(self):
         self.analytics_campaigns = self.analytics_campaigns_manager.get_campaigns()
         self.analytics_campaign_listbox.delete(0, 'end')
@@ -423,60 +428,54 @@ class EmailAutomationApp(tk.Tk):
             self.progress_tree.insert('', 'end', values=(email, company, stage, str(last_send) if last_send else '', str(response) if response else ''))
 
     def run_campaign_send(self):
+        threading.Thread(target=self._run_campaign_send_thread, daemon=True).start()
+
+    def _run_campaign_send_thread(self):
         from tkinter import messagebox
         from db.email_templates_manager import EmailTemplatesManager
         from db.contacts_manager import ContactsManager
-        import smtplib
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
         from email.mime.base import MIMEBase
         from email import encoders
-        import datetime
-        import traceback
-        # Konfiguracja SMTP z config.py
-        import sys
+        import sys, os
         sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
         from config import EMAIL_CONFIG
-
         if not self.selected_analytics_campaign_id:
-            messagebox.showerror('Błąd', 'Najpierw wybierz kampanię!')
+            self.send_status_label.config(text='Błąd: wybierz kampanię!')
+            self.after(2000, lambda: self.send_status_label.config(text=''))
             return
-
-        # Pobierz kontakty
         contacts_manager = ContactsManager()
         contacts = contacts_manager.get_contacts()
-        # Pobierz postęp
         progress_rows = self.analytics_progress_manager.get_progress_for_campaign(self.selected_analytics_campaign_id)
         progressed_emails = {row[1]: row for row in progress_rows}
-
-        # Pobierz szablon powitalny
         templates_manager = EmailTemplatesManager()
         tpl = templates_manager.get_template('welcome', self.selected_analytics_campaign_id)
         if not tpl:
-            messagebox.showerror('Błąd', 'Brak szablonu powitalnego dla tej kampanii!')
+            self.send_status_label.config(text='Brak szablonu powitalnego!')
+            self.after(2000, lambda: self.send_status_label.config(text=''))
             return
         subject, body, *_ = tpl
-
-        # Pobierz załączniki dla kroku powitalnego
         steps = self.steps_manager.get_steps(self.selected_analytics_campaign_id)
         if not steps:
-            messagebox.showerror('Błąd', 'Brak kroków w tej kampanii!')
+            self.send_status_label.config(text='Brak kroków w tej kampanii!')
+            self.after(2000, lambda: self.send_status_label.config(text=''))
             return
         welcome_step_id = steps[0][0]
         attachments = self.attachments_manager.get_attachments(welcome_step_id)
-
         sent_count = 0
-        for contact in contacts:
+        for idx, contact in enumerate(contacts):
             contact_id, email, company, address, phone, contact_name = contact
             row = progressed_emails.get(email)
             if not row or row[3] == 'not_sent':
                 try:
+                    self.send_status_label.config(text=f'Wysyłam do: {email} ({idx+1}/{len(contacts)})')
+                    self.update_idletasks()
                     msg = MIMEMultipart()
                     msg['From'] = EMAIL_CONFIG['from_address']
                     msg['To'] = email
                     msg['Subject'] = subject
                     msg.attach(MIMEText(body, 'plain'))
-                    # Dołącz wszystkie załączniki z bazy
                     for att in attachments:
                         _, filename, remote_path = att
                         if os.path.isfile(remote_path):
@@ -486,19 +485,23 @@ class EmailAutomationApp(tk.Tk):
                             encoders.encode_base64(part)
                             part.add_header('Content-Disposition', f'attachment; filename={filename}')
                             msg.attach(part)
+                    import smtplib
                     server = smtplib.SMTP(EMAIL_CONFIG['smtp_server'], EMAIL_CONFIG['smtp_port'])
                     server.starttls()
                     server.login(EMAIL_CONFIG['username'], EMAIL_CONFIG['password'])
                     server.sendmail(EMAIL_CONFIG['from_address'], email, msg.as_string())
                     server.quit()
                     self.analytics_progress_manager.add_or_update_progress(
-                        self.selected_analytics_campaign_id, contact_id, 'welcome_sent', datetime.datetime.now()
+                        self.selected_analytics_campaign_id, contact_id, 'welcome_sent', None
                     )
                     sent_count += 1
                 except Exception as e:
-                    traceback.print_exc()
-                    messagebox.showerror('Błąd wysyłki', f'Nie udało się wysłać do {email}: {e}')
+                    self.send_status_label.config(text=f'Błąd wysyłki do {email}: {e}')
+                    self.update_idletasks()
+        self.send_status_label.config(text='Wysyłka zakończona!')
         self.load_campaign_progress()
+        self.after(3000, lambda: self.send_status_label.config(text=''))
+        from tkinter import messagebox
         messagebox.showinfo('Wysyłka', f'Wysłano {sent_count} powitalnych wiadomości!')
 
     def check_responses(self):
