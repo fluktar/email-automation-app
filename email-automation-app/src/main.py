@@ -35,7 +35,7 @@ class EmailAutomationApp(tk.Tk):
         self.contacts_manager = ContactsManager()
 
         form_frame = ttk.Frame(self.tab_addresses)
-        form_frame.pack(pady=10)
+        form_frame.pack(pady=10, anchor='w')
 
         ttk.Label(form_frame, text='Email:').grid(row=0, column=0, padx=5, pady=5)
         self.email_entry = ttk.Entry(form_frame, width=30)
@@ -148,19 +148,21 @@ class EmailAutomationApp(tk.Tk):
 
             ttk.Label(frame, text='Temat:').grid(row=0, column=0, sticky='w')
             subject_entry = ttk.Entry(frame, width=60)
-            subject_entry.grid(row=0, column=1, padx=5, pady=2)
+            subject_entry.grid(row=0, column=1, padx=5, pady=2, sticky='ew')
             self.subject_entries[typ] = subject_entry
 
             ttk.Label(frame, text='Treść:').grid(row=1, column=0, sticky='nw')
-            body_text = tk.Text(frame, width=60, height=4)
-            body_text.grid(row=1, column=1, padx=5, pady=2)
+            body_text = tk.Text(frame, wrap='word')
+            body_text.grid(row=1, column=1, padx=5, pady=2, sticky='nsew')
             self.body_texts[typ] = body_text
+            frame.grid_rowconfigure(1, weight=1)
+            frame.grid_columnconfigure(1, weight=1)
 
             # Dni po poprzedniej tylko dla reminder i last_offer
             if typ != 'welcome':
                 ttk.Label(frame, text='Dni po poprzedniej:').grid(row=2, column=0, sticky='w')
                 days_entry = ttk.Entry(frame, width=10)
-                days_entry.grid(row=2, column=1, sticky='w', padx=5, pady=2)
+                days_entry.grid(row=2, column=1, sticky='ew', padx=5, pady=2)
                 self.days_entries[typ] = days_entry
                 row_attach = 3
             else:
@@ -323,6 +325,7 @@ class EmailAutomationApp(tk.Tk):
         for col in columns:
             self.progress_tree.heading(col, text=col)
         self.progress_tree.pack(fill='both', expand=True, padx=10, pady=10)
+        self.progress_tree.bind('<Double-1>', self.on_progress_row_double_click)
 
         # Przycisk uruchamiania wysyłki
         self.send_button = ttk.Button(right_frame, text='Uruchom wysyłkę', command=self.run_campaign_send, state='disabled')
@@ -476,6 +479,64 @@ class EmailAutomationApp(tk.Tk):
         self.load_campaign_progress()
         from tkinter import messagebox
         messagebox.showinfo('Odpowiedzi', 'Sprawdzono odpowiedzi w skrzynce odbiorczej!')
+
+    def on_progress_row_double_click(self, event):
+        item = self.progress_tree.selection()
+        if not item:
+            return
+        values = self.progress_tree.item(item[0], 'values')
+        email = values[0]
+        stage = values[2]
+        from db.email_templates_manager import EmailTemplatesManager
+        import sys
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+        from config import EMAIL_CONFIG
+        from imapclient import IMAPClient
+        import email as email_mod
+        import tkinter as tk
+        from tkinter import scrolledtext
+        # Domyślnie pokaż ostatnią wysłaną wiadomość (szablon)
+        msg_text = ''
+        if stage == 'responded':
+            # Pobierz najnowszą odpowiedź z IMAP
+            imap_host = EMAIL_CONFIG.get('imap_server', EMAIL_CONFIG['smtp_server'])
+            imap_user = EMAIL_CONFIG['username']
+            imap_pass = EMAIL_CONFIG['password']
+            with IMAPClient(imap_host, ssl=True) as server:
+                server.login(imap_user, imap_pass)
+                server.select_folder('INBOX')
+                messages = server.search(['FROM', email])
+                if messages:
+                    latest_uid = messages[-1]
+                    msg_data = server.fetch([latest_uid], ['RFC822'])[latest_uid][b'RFC822']
+                    msg = email_mod.message_from_bytes(msg_data)
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            if part.get_content_type() == 'text/plain':
+                                msg_text = part.get_payload(decode=True).decode(errors='ignore')
+                                break
+                    else:
+                        msg_text = msg.get_payload(decode=True).decode(errors='ignore')
+        else:
+            # Pobierz szablon ostatniej wysłanej wiadomości
+            templates_manager = EmailTemplatesManager()
+            tpl = None
+            if stage == 'welcome_sent':
+                tpl = templates_manager.get_template('welcome', self.selected_analytics_campaign_id)
+            elif stage == 'reminder_sent':
+                tpl = templates_manager.get_template('reminder', self.selected_analytics_campaign_id)
+            elif stage == 'last_offer_sent':
+                tpl = templates_manager.get_template('last_offer', self.selected_analytics_campaign_id)
+            if tpl:
+                subject, body, *_ = tpl
+                msg_text = f'Temat: {subject}\n\n{body}'
+        # Wyświetl okno z wiadomością
+        win = tk.Toplevel(self)
+        win.title('Podgląd wiadomości')
+        st = scrolledtext.ScrolledText(win, width=80, height=20)
+        st.pack(fill='both', expand=True)
+        st.insert('1.0', msg_text or 'Brak treści do wyświetlenia.')
+        st.config(state='disabled')
 
 if __name__ == '__main__':
     app = EmailAutomationApp()
