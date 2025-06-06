@@ -154,6 +154,33 @@ class EmailAutomationApp(tk.Tk):
         self.message_status_label = ttk.Label(self.tab_messages, text='', foreground='green')
         self.message_status_label.pack(side='bottom', pady=5)
 
+    def load_campaigns(self):
+        self.campaigns = self.campaigns_manager.get_campaigns()
+        self.campaign_listbox.delete(0, 'end')
+        for _id, name in self.campaigns:
+            self.campaign_listbox.insert('end', name)
+
+    def add_campaign(self):
+        name = self.new_campaign_entry.get().strip()
+        if name:
+            self.campaigns_manager.add_campaign(name)
+            self.load_campaigns()
+            self.new_campaign_entry.delete(0, 'end')
+
+    def remove_campaign(self):
+        selection = self.campaign_listbox.curselection()
+        if not selection:
+            return
+        idx = selection[0]
+        camp_id, camp_name = self.campaigns[idx]
+        self.campaigns_manager.remove_campaign(camp_name)
+        self.load_campaigns()
+        if hasattr(self, 'steps_listbox'):
+            self.steps_listbox.delete(0, 'end')
+            self.steps_listbox.config(state='disabled')
+        self.current_step_id = None
+        self.disable_template_form()
+
     def on_campaign_select_messages(self, event):
         selection = self.campaign_listbox.curselection()
         if not selection:
@@ -286,6 +313,16 @@ class EmailAutomationApp(tk.Tk):
         self.steps_manager.update_step(self.current_step_id, subject, body, days, attachment_path)
         self.show_message_status('Krok został zapisany!')
         self.load_steps()
+
+    def choose_attachment_single(self):
+        from tkinter import filedialog
+        file_path = filedialog.askopenfilename(filetypes=[('PDF files', '*.pdf'), ('All files', '*.*')])
+        if file_path:
+            self.attachment_path = file_path
+            self.attachment_label['text'] = os.path.basename(file_path)
+        else:
+            self.attachment_path = None
+            self.attachment_label['text'] = 'Brak załącznika'
 
     def init_analytics_tab(self):
         from db.campaigns_manager import CampaignsManager
@@ -527,6 +564,10 @@ class EmailAutomationApp(tk.Tk):
         st.pack(fill='both', expand=True)
         st.insert('1.0', msg_text or 'Brak treści do wyświetlenia.')
         st.config(state='disabled')
+
+    def show_message_status(self, text, color='green'):
+        self.message_status_label.config(text=text, foreground=color)
+        self.message_status_label.after(4000, lambda: self.message_status_label.config(text=''))
 
 if __name__ == '__main__':
     app = EmailAutomationApp()
