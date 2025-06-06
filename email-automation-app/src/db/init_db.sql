@@ -98,3 +98,18 @@ CREATE TABLE IF NOT EXISTS campaign_progress (
     response_date TIMESTAMP,
     UNIQUE (campaign_id, contact_id)
 );
+
+-- Tabela kroków (etapów) kampanii
+CREATE TABLE IF NOT EXISTS campaign_steps (
+    id SERIAL PRIMARY KEY,
+    campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+    step_order INTEGER NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    subject TEXT,
+    body TEXT,
+    days_after_prev INTEGER,
+    attachment_path TEXT
+);
+
+-- Dodanie indeksu dla szybkiego sortowania kroków
+CREATE INDEX IF NOT EXISTS idx_campaign_steps_campaign_id_order ON campaign_steps(campaign_id, step_order);

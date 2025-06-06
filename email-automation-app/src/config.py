@@ -1,20 +1,25 @@
 # This file contains configuration settings for the email automation application.
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), '..','..' '.env'))
+
 DATABASE_CONFIG = {
-    'host': 'localhost',
-    'port': 5432,
-    'database': 'email_automation',
-    'user': 'your_username',
-    'password': 'your_password'
+    'host': os.getenv('DB_HOST'),
+    'port': int(os.getenv('DB_PORT', 5432)),
+    'database': os.getenv('DB_NAME'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD')
 }
 
 EMAIL_CONFIG = {
-    'smtp_server': 'smtp.purelymail.com',
-    'smtp_port': 587,
-    'username': 'office@uroboros.online',
-    'password': 'Sojokotojo1@3',
-    'from_address': 'office@uroboros.online',
-    'imap_server': 'imap.purelymail.com',
+    'smtp_server': os.getenv('SMTP_SERVER'),
+    'smtp_port': int(os.getenv('SMTP_PORT', 587)),
+    'username': os.getenv('EMAIL_USERNAME'),
+    'password': os.getenv('EMAIL_PASSWORD'),
+    'from_address': os.getenv('EMAIL_FROM'),
+    'imap_server': os.getenv('IMAP_SERVER'),
 }
 
 REMINDER_SETTINGS = {

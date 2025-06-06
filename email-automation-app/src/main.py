@@ -8,7 +8,7 @@ class EmailAutomationApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title('Email Automation App')
-        self.geometry('900x900')
+        self.geometry('1200x900')
         self.create_widgets()
 
     def create_widgets(self):
@@ -97,9 +97,9 @@ class EmailAutomationApp(tk.Tk):
 
     def init_messages_tab(self):
         from tkinter import filedialog, messagebox
-        from db.email_templates_manager import EmailTemplatesManager
+        from db.campaign_steps_manager import CampaignStepsManager
         from db.campaigns_manager import CampaignsManager
-        self.templates_manager = EmailTemplatesManager()
+        self.steps_manager = CampaignStepsManager()
         self.campaigns_manager = CampaignsManager()
 
         main_frame = ttk.Frame(self.tab_messages)
@@ -124,20 +124,19 @@ class EmailAutomationApp(tk.Tk):
         self.selected_campaign_id = None
         self.load_campaigns()
 
-        # Lista typów wiadomości pod kampaniami
-        ttk.Label(left_frame, text='Wiadomości:').pack(anchor='w', pady=(10, 0))
-        self.template_types = [
-            ('welcome', 'Powitalna z ofertą'),
-            ('reminder', 'Przypominająca'),
-            ('last_offer', 'Ostatnia propozycja')
-        ]
-        self.template_listbox = tk.Listbox(left_frame, width=25, exportselection=False)
-        for _, label in self.template_types:
-            self.template_listbox.insert('end', label)
-        self.template_listbox.pack(fill='x')
-        self.template_listbox.bind('<<ListboxSelect>>', self.on_template_select)
-        self.template_listbox.config(state='disabled')
-        self.current_template_type = None
+        # Lista kroków kampanii
+        ttk.Label(left_frame, text='Kroki kampanii:').pack(anchor='w', pady=(10, 0))
+        self.steps_listbox = tk.Listbox(left_frame, width=25, exportselection=False)
+        self.steps_listbox.pack(fill='x')
+        self.steps_listbox.bind('<<ListboxSelect>>', self.on_step_select)
+        self.steps_listbox.config(state='disabled')
+        self.current_step_id = None
+        self.steps = []
+        # Dodawanie/usuwanie kroków
+        steps_btn_frame = ttk.Frame(left_frame)
+        steps_btn_frame.pack(fill='x', pady=(5, 0))
+        ttk.Button(steps_btn_frame, text='Dodaj krok', command=self.add_step).pack(side='left', padx=2)
+        ttk.Button(steps_btn_frame, text='Usuń krok', command=self.remove_step).pack(side='left', padx=2)
 
         # Prawa strona: formularz
         self.template_form_frame = ttk.Frame(right_frame)
@@ -148,7 +147,7 @@ class EmailAutomationApp(tk.Tk):
         self.attachment_label = ttk.Label(self.template_form_frame, text='Brak załącznika', width=40)
         self.attachment_path = None
         self.attachment_btn = ttk.Button(self.template_form_frame, text='Wybierz załącznik', command=self.choose_attachment_single)
-        self.save_btn = ttk.Button(self.template_form_frame, text='Zapisz', command=self.save_current_template)
+        self.save_btn = ttk.Button(self.template_form_frame, text='Zapisz', command=self.save_current_step)
         self.disable_template_form()
 
         # Komunikaty
@@ -159,49 +158,74 @@ class EmailAutomationApp(tk.Tk):
         selection = self.campaign_listbox.curselection()
         if not selection:
             self.selected_campaign_id = None
-            self.template_listbox.config(state='disabled')
+            self.steps_listbox.config(state='disabled')
             self.disable_template_form()
             return
         idx = selection[0]
         camp_id, camp_name = self.campaigns[idx]
         self.selected_campaign_id = camp_id
-        self.template_listbox.config(state='normal')
-        self.template_listbox.selection_clear(0, 'end')
-        self.current_template_type = None
+        self.load_steps()
+        self.steps_listbox.config(state='normal')
+        self.steps_listbox.selection_clear(0, 'end')
+        self.current_step_id = None
         self.disable_template_form()
 
-    def on_template_select(self, event):
+    def load_steps(self):
+        self.steps = self.steps_manager.get_steps(self.selected_campaign_id)
+        self.steps_listbox.delete(0, 'end')
+        for step in self.steps:
+            _id, order, name, *_ = step
+            self.steps_listbox.insert('end', f'{order}. {name}')
+
+    def add_step(self):
+        if not self.selected_campaign_id:
+            self.show_message_status('Najpierw wybierz kampanię!', 'red')
+            return
+        from tkinter.simpledialog import askstring
+        name = askstring('Nowy krok', 'Podaj nazwę kroku:')
+        if name:
+            self.steps_manager.add_step(self.selected_campaign_id, name)
+            self.load_steps()
+
+    def remove_step(self):
+        selection = self.steps_listbox.curselection()
+        if not selection:
+            return
+        idx = selection[0]
+        step_id = self.steps[idx][0]
+        self.steps_manager.remove_step(step_id)
+        self.load_steps()
+        self.disable_template_form()
+
+    def on_step_select(self, event):
         if not self.selected_campaign_id:
             self.disable_template_form()
             return
-        selection = self.template_listbox.curselection()
+        selection = self.steps_listbox.curselection()
         if not selection:
             self.disable_template_form()
             return
         idx = selection[0]
-        typ, _ = self.template_types[idx]
-        self.current_template_type = typ
-        self.show_template_form(typ)
+        step = self.steps[idx]
+        self.current_step_id = step[0]
+        self.show_step_form(step)
 
-    def show_template_form(self, template_type):
+    def show_step_form(self, step):
         for widget in self.template_form_frame.winfo_children():
             widget.pack_forget()
         ttk.Label(self.template_form_frame, text='Temat:').pack(anchor='w')
         self.subject_entry.pack(fill='x', pady=2)
         ttk.Label(self.template_form_frame, text='Treść:').pack(anchor='w')
         self.body_text.pack(fill='both', expand=True, pady=2)
-        if template_type != 'welcome':
-            ttk.Label(self.template_form_frame, text='Dni po poprzedniej:').pack(anchor='w')
-            self.days_entry.pack(anchor='w', pady=2)
-        else:
-            self.days_entry.pack_forget()
+        ttk.Label(self.template_form_frame, text='Dni po poprzedniej:').pack(anchor='w')
+        self.days_entry.pack(anchor='w', pady=2)
         attach_frame = ttk.Frame(self.template_form_frame)
         attach_frame.pack(anchor='w', pady=2)
         self.attachment_btn.pack(in_=attach_frame, side='left')
         self.attachment_label.pack(in_=attach_frame, side='left', padx=5)
         self.save_btn.pack(pady=5)
         self.template_form_frame.pack(fill='both', expand=True)
-        self.load_current_template()
+        self.load_current_step()
         self.enable_template_form()
 
     def disable_template_form(self):
@@ -217,97 +241,51 @@ class EmailAutomationApp(tk.Tk):
     def enable_template_form(self):
         self.template_form_frame.pack(fill='both', expand=True)
 
-    def load_campaigns(self):
-        self.campaigns = self.campaigns_manager.get_campaigns()
-        self.campaign_listbox.delete(0, 'end')
-        for _id, name in self.campaigns:
-            self.campaign_listbox.insert('end', name)
-
-    def add_campaign(self):
-        name = self.new_campaign_entry.get().strip()
-        if name:
-            self.campaigns_manager.add_campaign(name)
-            self.load_campaigns()
-            self.new_campaign_entry.delete(0, 'end')
-
-    def remove_campaign(self):
-        selection = self.campaign_listbox.curselection()
-        if not selection:
-            return
-        idx = selection[0]
-        camp_id, camp_name = self.campaigns[idx]
-        self.campaigns_manager.remove_campaign(camp_name)
-        self.load_campaigns()
-        self.disable_template_form()
-
-    def load_current_template(self):
-        if not self.selected_campaign_id or not self.current_template_type:
+    def load_current_step(self):
+        if not self.current_step_id:
             self.subject_entry.delete(0, 'end')
             self.body_text.delete('1.0', 'end')
             self.days_entry.delete(0, 'end')
             self.attachment_label['text'] = 'Brak załącznika'
             self.attachment_path = None
             return
-        tpl = self.templates_manager.get_template(self.current_template_type, self.selected_campaign_id)
-        if tpl:
-            subject, body, days, attachment_path = tpl
-            self.subject_entry.delete(0, 'end')
-            self.subject_entry.insert(0, subject)
-            self.body_text.delete('1.0', 'end')
-            self.body_text.insert('1.0', body)
-            if self.current_template_type != 'welcome':
-                self.days_entry.delete(0, 'end')
-                self.days_entry.insert(0, str(days))
-            else:
-                self.days_entry.delete(0, 'end')
-            if attachment_path:
-                self.attachment_path = attachment_path
-                self.attachment_label['text'] = os.path.basename(attachment_path)
-            else:
-                self.attachment_path = None
-                self.attachment_label['text'] = 'Brak załącznika'
-        else:
+        # Pobierz dane kroku z self.steps
+        step = next((s for s in self.steps if s[0] == self.current_step_id), None)
+        if not step:
             self.subject_entry.delete(0, 'end')
             self.body_text.delete('1.0', 'end')
-            if self.current_template_type != 'welcome':
-                self.days_entry.delete(0, 'end')
-            else:
-                self.days_entry.delete(0, 'end')
-            self.attachment_path = None
+            self.days_entry.delete(0, 'end')
             self.attachment_label['text'] = 'Brak załącznika'
-
-    def choose_attachment_single(self):
-        from tkinter import filedialog
-        file_path = filedialog.askopenfilename(filetypes=[('PDF files', '*.pdf'), ('All files', '*.*')])
-        if file_path:
-            self.attachment_path = file_path
-            self.attachment_label['text'] = os.path.basename(file_path)
+            self.attachment_path = None
+            return
+        _, _, name, subject, body, days, attachment_path = step
+        self.subject_entry.delete(0, 'end')
+        self.subject_entry.insert(0, subject or '')
+        self.body_text.delete('1.0', 'end')
+        self.body_text.insert('1.0', body or '')
+        self.days_entry.delete(0, 'end')
+        self.days_entry.insert(0, str(days) if days is not None else '')
+        if attachment_path:
+            self.attachment_path = attachment_path
+            self.attachment_label['text'] = os.path.basename(attachment_path)
         else:
             self.attachment_path = None
             self.attachment_label['text'] = 'Brak załącznika'
 
-    def save_current_template(self):
-        if not self.selected_campaign_id or not self.current_template_type:
-            self.show_message_status('Najpierw wybierz kampanię i typ wiadomości!', 'red')
+    def save_current_step(self):
+        if not self.current_step_id:
+            self.show_message_status('Najpierw wybierz krok!', 'red')
             return
         subject = self.subject_entry.get().strip()
         body = self.body_text.get('1.0', 'end').strip()
-        if self.current_template_type != 'welcome':
-            try:
-                days = int(self.days_entry.get().strip())
-            except ValueError:
-                days = 0
-        else:
-            days = 0
+        try:
+            days = int(self.days_entry.get().strip())
+        except ValueError:
+            days = None
         attachment_path = self.attachment_path
-        self.templates_manager.save_template(
-            self.current_template_type, subject, body, days, self.selected_campaign_id, attachment_path
-        )
-        self.show_message_status('Wiadomość została zapisana lub zaktualizowana!')
-
-    def show_message_status(self, text, color='green'):
-        self.message_status_label.config(text=text, foreground=color)
-        self.message_status_label.after(4000, lambda: self.message_status_label.config(text=''))
+        self.steps_manager.update_step(self.current_step_id, subject, body, days, attachment_path)
+        self.show_message_status('Krok został zapisany!')
+        self.load_steps()
 
     def init_analytics_tab(self):
         from db.campaigns_manager import CampaignsManager
