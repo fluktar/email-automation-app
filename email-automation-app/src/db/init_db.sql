@@ -59,3 +59,31 @@ CREATE TABLE IF NOT EXISTS email_templates (
     days_after_previous INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Tabela kampanii
+CREATE TABLE IF NOT EXISTS campaigns (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Dodanie powiązania szablonu z kampanią i ścieżki do załącznika
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_templates' AND column_name='campaign_id') THEN
+        ALTER TABLE email_templates ADD COLUMN campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_templates' AND column_name='attachment_path') THEN
+        ALTER TABLE email_templates ADD COLUMN attachment_path VARCHAR(255);
+    END IF;
+END$$;
+
+-- Dodanie unikalnego indeksu na (template_type, campaign_id)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes WHERE tablename = 'email_templates' AND indexname = 'email_templates_template_type_campaign_id_key'
+    ) THEN
+        CREATE UNIQUE INDEX email_templates_template_type_campaign_id_key ON email_templates(template_type, campaign_id);
+    END IF;
+END$$;

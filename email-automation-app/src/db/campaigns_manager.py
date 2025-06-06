@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from sshtunnel import SSHTunnelForwarder
 import psycopg2
 
-class EmailTemplatesManager:
+class CampaignsManager:
     def __init__(self):
         load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
         self.ssh_host = os.getenv('SSH_HOST')
@@ -33,35 +33,30 @@ class EmailTemplatesManager:
         )
         return conn, tunnel
 
-    def save_template(self, template_type, subject, body, days_after_previous, campaign_id, attachment_path=None):
+    def add_campaign(self, name):
         conn, tunnel = self._get_connection()
         cur = conn.cursor()
-        cur.execute('''
-            INSERT INTO email_templates (template_type, subject, body, days_after_previous, campaign_id, attachment_path)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (template_type, campaign_id) DO UPDATE SET subject=EXCLUDED.subject, body=EXCLUDED.body, days_after_previous=EXCLUDED.days_after_previous, attachment_path=EXCLUDED.attachment_path;
-        ''', (template_type, subject, body, days_after_previous, campaign_id, attachment_path))
+        cur.execute('INSERT INTO campaigns (name) VALUES (%s) ON CONFLICT (name) DO NOTHING;', (name,))
         conn.commit()
         cur.close()
         conn.close()
         tunnel.stop()
 
-    def get_templates(self, campaign_id):
+    def remove_campaign(self, name):
         conn, tunnel = self._get_connection()
         cur = conn.cursor()
-        cur.execute('SELECT template_type, subject, body, days_after_previous, attachment_path FROM email_templates WHERE campaign_id=%s ORDER BY id;', (campaign_id,))
+        cur.execute('DELETE FROM campaigns WHERE name=%s;', (name,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        tunnel.stop()
+
+    def get_campaigns(self):
+        conn, tunnel = self._get_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT id, name FROM campaigns ORDER BY id;')
         rows = cur.fetchall()
         cur.close()
         conn.close()
         tunnel.stop()
         return rows
-
-    def get_template(self, template_type, campaign_id):
-        conn, tunnel = self._get_connection()
-        cur = conn.cursor()
-        cur.execute('SELECT subject, body, days_after_previous, attachment_path FROM email_templates WHERE template_type=%s AND campaign_id=%s;', (template_type, campaign_id))
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-        tunnel.stop()
-        return row
