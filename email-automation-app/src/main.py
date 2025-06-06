@@ -102,200 +102,168 @@ class EmailAutomationApp(tk.Tk):
         self.templates_manager = EmailTemplatesManager()
         self.campaigns_manager = CampaignsManager()
 
-        # --- Panel kampanii po prawej stronie ---
         main_frame = ttk.Frame(self.tab_messages)
         main_frame.pack(fill='both', expand=True)
         left_frame = ttk.Frame(main_frame)
-        left_frame.pack(side='left', fill='both', expand=True)
-        right_frame = ttk.Frame(main_frame, width=200)
-        right_frame.pack(side='right', fill='y')
+        left_frame.pack(side='left', fill='y')
+        right_frame = ttk.Frame(main_frame)
+        right_frame.pack(side='left', fill='both', expand=True)
 
-        # Lista kampanii
-        ttk.Label(right_frame, text='Kampanie:').pack(pady=5)
-        self.campaign_listbox = tk.Listbox(right_frame, width=25)
-        self.campaign_listbox.pack(padx=5, pady=5, fill='y', expand=True)
-        self.campaign_listbox.bind('<<ListboxSelect>>', self.on_campaign_select)
-
-        add_camp_frame = ttk.Frame(right_frame)
-        add_camp_frame.pack(pady=5)
-        self.new_campaign_entry = ttk.Entry(add_camp_frame, width=15)
-        self.new_campaign_entry.pack(side='left', padx=2)
-        ttk.Button(add_camp_frame, text='Dodaj', command=self.add_campaign).pack(side='left')
-        ttk.Button(right_frame, text='Usuń', command=self.remove_campaign).pack(pady=2)
-
-        self.campaigns = []
-        self.selected_campaign_id = None
-        self.load_campaigns()
-
-        # --- Szablony wiadomości ---
+        # Lista typów wiadomości
         self.template_types = [
             ('welcome', 'Powitalna z ofertą'),
             ('reminder', 'Przypominająca'),
             ('last_offer', 'Ostatnia propozycja')
         ]
-        self.subject_entries = {}
-        self.body_texts = {}
-        self.days_entries = {}
-        self.attachment_labels = {}
-        self.attachment_paths = {}
-        self.attachment_buttons = {}
-        self.template_frames = {}
+        self.template_listbox = tk.Listbox(left_frame, width=25)
+        for _, label in self.template_types:
+            self.template_listbox.insert('end', label)
+        self.template_listbox.pack(padx=5, pady=5, fill='y', expand=True)
+        self.template_listbox.bind('<<ListboxSelect>>', self.on_template_select)
 
-        for idx, (typ, label) in enumerate(self.template_types):
-            frame = ttk.LabelFrame(left_frame, text=label)
-            frame.pack(fill='x', padx=10, pady=10)
-            self.template_frames[typ] = frame
+        # Prawa strona: formularz (początkowo ukryty)
+        self.template_form_frame = ttk.Frame(right_frame)
+        self.template_form_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        self.current_template_type = None
+        self.subject_entry = ttk.Entry(self.template_form_frame, width=60)
+        self.body_text = tk.Text(self.template_form_frame, wrap='word')
+        self.days_entry = ttk.Entry(self.template_form_frame, width=10)
+        self.attachment_label = ttk.Label(self.template_form_frame, text='Brak załącznika', width=40)
+        self.attachment_path = None
+        self.attachment_btn = ttk.Button(self.template_form_frame, text='Wybierz załącznik', command=self.choose_attachment_single)
+        self.save_btn = ttk.Button(self.template_form_frame, text='Zapisz', command=self.save_current_template)
+        # Ukryj formularz na start
+        self.template_form_frame.pack_forget()
 
-            ttk.Label(frame, text='Temat:').grid(row=0, column=0, sticky='w')
-            subject_entry = ttk.Entry(frame, width=60)
-            subject_entry.grid(row=0, column=1, padx=5, pady=2, sticky='ew')
-            self.subject_entries[typ] = subject_entry
-
-            ttk.Label(frame, text='Treść:').grid(row=1, column=0, sticky='nw')
-            body_text = tk.Text(frame, wrap='word')
-            body_text.grid(row=1, column=1, padx=5, pady=2, sticky='nsew')
-            self.body_texts[typ] = body_text
-            frame.grid_rowconfigure(1, weight=1)
-            frame.grid_columnconfigure(1, weight=1)
-
-            # Dni po poprzedniej tylko dla reminder i last_offer
-            if typ != 'welcome':
-                ttk.Label(frame, text='Dni po poprzedniej:').grid(row=2, column=0, sticky='w')
-                days_entry = ttk.Entry(frame, width=10)
-                days_entry.grid(row=2, column=1, sticky='ew', padx=5, pady=2)
-                self.days_entries[typ] = days_entry
-                row_attach = 3
-            else:
-                self.days_entries[typ] = None
-                row_attach = 2
-
-            # Załącznik
-            attach_frame = ttk.Frame(frame)
-            attach_frame.grid(row=row_attach, column=0, columnspan=2, sticky='w', pady=2)
-            attach_btn = ttk.Button(attach_frame, text='Wybierz załącznik', command=lambda t=typ: self.choose_attachment(t))
-            attach_btn.pack(side='left')
-            self.attachment_buttons[typ] = attach_btn
-            attach_label = ttk.Label(attach_frame, text='Brak załącznika', width=40)
-            attach_label.pack(side='left', padx=5)
-            self.attachment_labels[typ] = attach_label
-            self.attachment_paths[typ] = None
-
-            save_btn = ttk.Button(frame, text='Zapisz', command=lambda t=typ: self.save_template(t))
-            save_btn.grid(row=row_attach+1, column=0, columnspan=2, pady=5)
+        # Kampanie po prawej
+        right_panel = ttk.Frame(right_frame)
+        right_panel.pack(side='right', fill='y')
+        ttk.Label(right_panel, text='Kampanie:').pack(pady=5)
+        self.campaign_listbox = tk.Listbox(right_panel, width=25)
+        self.campaign_listbox.pack(padx=5, pady=5, fill='y', expand=True)
+        self.campaign_listbox.bind('<<ListboxSelect>>', self.on_campaign_select)
+        add_camp_frame = ttk.Frame(right_panel)
+        add_camp_frame.pack(pady=5)
+        self.new_campaign_entry = ttk.Entry(add_camp_frame, width=15)
+        self.new_campaign_entry.pack(side='left', padx=2)
+        ttk.Button(add_camp_frame, text='Dodaj', command=self.add_campaign).pack(side='left')
+        ttk.Button(right_panel, text='Usuń', command=self.remove_campaign).pack(pady=2)
+        self.campaigns = []
+        self.selected_campaign_id = None
+        self.load_campaigns()
 
         # Etykieta na komunikaty na dole zakładki
         self.message_status_label = ttk.Label(self.tab_messages, text='', foreground='green')
         self.message_status_label.pack(side='bottom', pady=5)
+        self.disable_template_form()
 
-        self.disable_templates()
+    def on_template_select(self, event):
+        selection = self.template_listbox.curselection()
+        if not selection:
+            self.disable_template_form()
+            return
+        idx = selection[0]
+        typ, _ = self.template_types[idx]
+        self.current_template_type = typ
+        self.show_template_form(typ)
 
-    def show_message_status(self, text, color='green'):
-        self.message_status_label.config(text=text, foreground=color)
-        self.message_status_label.after(4000, lambda: self.message_status_label.config(text=''))
+    def show_template_form(self, template_type):
+        # Wyczyść formularz
+        for widget in self.template_form_frame.winfo_children():
+            widget.pack_forget()
+        # Temat
+        ttk.Label(self.template_form_frame, text='Temat:').pack(anchor='w')
+        self.subject_entry.pack(fill='x', pady=2)
+        # Treść
+        ttk.Label(self.template_form_frame, text='Treść:').pack(anchor='w')
+        self.body_text.pack(fill='both', expand=True, pady=2)
+        # Dni po poprzedniej (tylko dla reminder, last_offer)
+        if template_type != 'welcome':
+            ttk.Label(self.template_form_frame, text='Dni po poprzedniej:').pack(anchor='w')
+            self.days_entry.pack(anchor='w', pady=2)
+        else:
+            self.days_entry.pack_forget()
+        # Załącznik
+        attach_frame = ttk.Frame(self.template_form_frame)
+        attach_frame.pack(anchor='w', pady=2)
+        self.attachment_btn.pack(in_=attach_frame, side='left')
+        self.attachment_label.pack(in_=attach_frame, side='left', padx=5)
+        # Zapisz
+        self.save_btn.pack(pady=5)
+        self.template_form_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        self.load_current_template()
+        self.enable_template_form()
 
-    def choose_attachment(self, template_type):
+    def disable_template_form(self):
+        self.template_form_frame.pack_forget()
+
+    def enable_template_form(self):
+        self.template_form_frame.pack(fill='both', expand=True, padx=10, pady=10)
+
+    def load_current_template(self):
+        if not self.selected_campaign_id or not self.current_template_type:
+            self.subject_entry.delete(0, 'end')
+            self.body_text.delete('1.0', 'end')
+            self.days_entry.delete(0, 'end')
+            self.attachment_label['text'] = 'Brak załącznika'
+            self.attachment_path = None
+            return
+        tpl = self.templates_manager.get_template(self.current_template_type, self.selected_campaign_id)
+        if tpl:
+            subject, body, days, attachment_path = tpl
+            self.subject_entry.delete(0, 'end')
+            self.subject_entry.insert(0, subject)
+            self.body_text.delete('1.0', 'end')
+            self.body_text.insert('1.0', body)
+            if self.current_template_type != 'welcome':
+                self.days_entry.delete(0, 'end')
+                self.days_entry.insert(0, str(days))
+            if attachment_path:
+                self.attachment_path = attachment_path
+                self.attachment_label['text'] = os.path.basename(attachment_path)
+            else:
+                self.attachment_path = None
+                self.attachment_label['text'] = 'Brak załącznika'
+        else:
+            self.subject_entry.delete(0, 'end')
+            self.body_text.delete('1.0', 'end')
+            if self.current_template_type != 'welcome':
+                self.days_entry.delete(0, 'end')
+            self.attachment_path = None
+            self.attachment_label['text'] = 'Brak załącznika'
+
+    def choose_attachment_single(self):
         from tkinter import filedialog
         file_path = filedialog.askopenfilename(filetypes=[('PDF files', '*.pdf'), ('All files', '*.*')])
         if file_path:
-            self.attachment_paths[template_type] = file_path
-            self.attachment_labels[template_type]['text'] = os.path.basename(file_path)
+            self.attachment_path = file_path
+            self.attachment_label['text'] = os.path.basename(file_path)
         else:
-            self.attachment_paths[template_type] = None
-            self.attachment_labels[template_type]['text'] = 'Brak załącznika'
+            self.attachment_path = None
+            self.attachment_label['text'] = 'Brak załącznika'
 
-    def add_campaign(self):
-        name = self.new_campaign_entry.get().strip()
-        if name:
-            self.campaigns_manager.add_campaign(name)
-            self.load_campaigns()
-            self.new_campaign_entry.delete(0, 'end')
-
-    def remove_campaign(self):
-        selection = self.campaign_listbox.curselection()
-        if selection:
-            idx = selection[0]
-            camp_id, camp_name = self.campaigns[idx]
-            self.campaigns_manager.remove_campaign(camp_name)
-            self.load_campaigns()
-            self.disable_templates()
-
-    def load_campaigns(self):
-        self.campaigns = self.campaigns_manager.get_campaigns()
-        self.campaign_listbox.delete(0, 'end')
-        for _id, name in self.campaigns:
-            self.campaign_listbox.insert('end', name)
-
-    def on_campaign_select(self, event):
-        selection = self.campaign_listbox.curselection()
-        if selection:
-            idx = selection[0]
-            camp_id, camp_name = self.campaigns[idx]
-            self.selected_campaign_id = camp_id
-            self.enable_templates()
-            self.load_templates()
-        else:
-            self.selected_campaign_id = None
-            self.disable_templates()
-
-    def enable_templates(self):
-        for typ in self.template_types:
-            for widget in self.template_frames[typ[0]].winfo_children():
-                if isinstance(widget, (ttk.Entry, tk.Text, ttk.Button)):
-                    widget.configure(state='normal')
-
-    def disable_templates(self):
-        for typ in self.template_types:
-            for widget in self.template_frames[typ[0]].winfo_children():
-                if isinstance(widget, (ttk.Entry, tk.Text, ttk.Button)):
-                    widget.configure(state='disabled')
-
-    def save_template(self, template_type):
-        if not self.selected_campaign_id:
-            self.show_message_status('Najpierw wybierz kampanię!', 'red')
+    def save_current_template(self):
+        if not self.selected_campaign_id or not self.current_template_type:
+            self.show_message_status('Najpierw wybierz kampanię i typ wiadomości!', 'red')
             return
-        subject = self.subject_entries[template_type].get().strip()
-        body = self.body_texts[template_type].get('1.0', 'end').strip()
-        if template_type != 'welcome':
+        subject = self.subject_entry.get().strip()
+        body = self.body_text.get('1.0', 'end').strip()
+        if self.current_template_type != 'welcome':
             try:
-                days = int(self.days_entries[template_type].get().strip())
+                days = int(self.days_entry.get().strip())
             except ValueError:
                 days = 0
         else:
             days = 0
-        attachment_path = self.attachment_paths[template_type]
+        attachment_path = self.attachment_path
         self.templates_manager.save_template(
-            template_type, subject, body, days, self.selected_campaign_id, attachment_path
+            self.current_template_type, subject, body, days, self.selected_campaign_id, attachment_path
         )
         self.show_message_status('Wiadomość została zapisana lub zaktualizowana!')
 
-    def load_templates(self):
-        if not self.selected_campaign_id:
-            self.disable_templates()
-            return
-        for typ, _ in self.template_types:
-            tpl = self.templates_manager.get_template(typ, self.selected_campaign_id)
-            if tpl:
-                subject, body, days, attachment_path = tpl
-                self.subject_entries[typ].delete(0, 'end')
-                self.subject_entries[typ].insert(0, subject)
-                self.body_texts[typ].delete('1.0', 'end')
-                self.body_texts[typ].insert('1.0', body)
-                if typ != 'welcome':
-                    self.days_entries[typ].delete(0, 'end')
-                    self.days_entries[typ].insert(0, str(days))
-                if attachment_path:
-                    self.attachment_paths[typ] = attachment_path
-                    self.attachment_labels[typ]['text'] = os.path.basename(attachment_path)
-                else:
-                    self.attachment_paths[typ] = None
-                    self.attachment_labels[typ]['text'] = 'Brak załącznika'
-            else:
-                self.subject_entries[typ].delete(0, 'end')
-                self.body_texts[typ].delete('1.0', 'end')
-                if typ != 'welcome':
-                    self.days_entries[typ].delete(0, 'end')
-                self.attachment_paths[typ] = None
-                self.attachment_labels[typ]['text'] = 'Brak załącznika'
+    def show_message_status(self, text, color='green'):
+        self.message_status_label.config(text=text, foreground=color)
+        self.message_status_label.after(4000, lambda: self.message_status_label.config(text=''))
 
     def init_analytics_tab(self):
         from db.campaigns_manager import CampaignsManager
