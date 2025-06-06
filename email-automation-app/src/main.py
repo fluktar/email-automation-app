@@ -1,9 +1,25 @@
 # filepath: email-automation-app/email-automation-app/src/main.py
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog, messagebox
 import os
 import threading
+from db.contacts_manager import ContactsManager
+from db.campaign_steps_manager import CampaignStepsManager
+from db.campaigns_manager import CampaignsManager
+from db.attachments_manager import AttachmentsManager
+from db.attachment_uploader import AttachmentUploader
+from db.campaign_progress_manager import CampaignProgressManager
+from db.email_templates_manager import EmailTemplatesManager
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+import sys
+import datetime
+import traceback
+from imapclient import IMAPClient
 
 class EmailAutomationApp(tk.Tk):
     def __init__(self):
@@ -32,7 +48,6 @@ class EmailAutomationApp(tk.Tk):
         self.init_analytics_tab()
 
     def init_addresses_tab(self):
-        from db.contacts_manager import ContactsManager
         self.contacts_manager = ContactsManager()
 
         form_frame = ttk.Frame(self.tab_addresses)
@@ -97,11 +112,6 @@ class EmailAutomationApp(tk.Tk):
             self.contacts_list.insert('', 'end', values=(email, company, address, phone, contact_name))
 
     def init_messages_tab(self):
-        from tkinter import filedialog, messagebox
-        from db.campaign_steps_manager import CampaignStepsManager
-        from db.campaigns_manager import CampaignsManager
-        from db.attachments_manager import AttachmentsManager
-        from db.attachment_uploader import AttachmentUploader
         self.steps_manager = CampaignStepsManager()
         self.campaigns_manager = CampaignsManager()
         self.attachments_manager = AttachmentsManager()
@@ -283,7 +293,6 @@ class EmailAutomationApp(tk.Tk):
         if not self.current_step_id:
             self.show_message_status('Najpierw wybierz krok!', 'red')
             return
-        from tkinter import filedialog
         file_path = filedialog.askopenfilename(filetypes=[('PDF files', '*.pdf'), ('All files', '*.*')])
         if not file_path:
             return
@@ -358,8 +367,6 @@ class EmailAutomationApp(tk.Tk):
         pass  # NIEUŻYWANE, zostawiamy pustą dla kompatybilności
 
     def init_analytics_tab(self):
-        from db.campaigns_manager import CampaignsManager
-        from db.campaign_progress_manager import CampaignProgressManager
         self.analytics_campaigns_manager = CampaignsManager()
         self.analytics_progress_manager = CampaignProgressManager()
 
@@ -431,14 +438,6 @@ class EmailAutomationApp(tk.Tk):
         threading.Thread(target=self._run_campaign_send_thread, daemon=True).start()
 
     def _run_campaign_send_thread(self):
-        from tkinter import messagebox
-        from db.email_templates_manager import EmailTemplatesManager
-        from db.contacts_manager import ContactsManager
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
-        from email.mime.base import MIMEBase
-        from email import encoders
-        import sys, os
         sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
         from config import EMAIL_CONFIG
         if not self.selected_analytics_campaign_id:
@@ -485,7 +484,6 @@ class EmailAutomationApp(tk.Tk):
                             encoders.encode_base64(part)
                             part.add_header('Content-Disposition', f'attachment; filename={filename}')
                             msg.attach(part)
-                    import smtplib
                     server = smtplib.SMTP(EMAIL_CONFIG['smtp_server'], EMAIL_CONFIG['smtp_port'])
                     server.starttls()
                     server.login(EMAIL_CONFIG['username'], EMAIL_CONFIG['password'])
@@ -501,20 +499,13 @@ class EmailAutomationApp(tk.Tk):
         self.send_status_label.config(text='Wysyłka zakończona!')
         self.load_campaign_progress()
         self.after(3000, lambda: self.send_status_label.config(text=''))
-        from tkinter import messagebox
         messagebox.showinfo('Wysyłka', f'Wysłano {sent_count} powitalnych wiadomości!')
 
     def check_responses(self):
-        from imapclient import IMAPClient
-        import email
-        import datetime
-        from db.campaign_progress_manager import CampaignProgressManager
-        import sys
         sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
         from config import EMAIL_CONFIG
 
         if not self.selected_analytics_campaign_id:
-            from tkinter import messagebox
             messagebox.showerror('Błąd', 'Najpierw wybierz kampanię!')
             return
 
@@ -545,7 +536,6 @@ class EmailAutomationApp(tk.Tk):
                         self.selected_analytics_campaign_id, contact_id, 'responded', response_date=datetime.datetime.now()
                     )
         self.load_campaign_progress()
-        from tkinter import messagebox
         messagebox.showinfo('Odpowiedzi', 'Sprawdzono odpowiedzi w skrzynce odbiorczej!')
 
     def on_progress_row_double_click(self, event):
@@ -555,11 +545,8 @@ class EmailAutomationApp(tk.Tk):
         values = self.progress_tree.item(item[0], 'values')
         email = values[0]
         stage = values[2]
-        from db.email_templates_manager import EmailTemplatesManager
-        import sys
         sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
         from config import EMAIL_CONFIG
-        from imapclient import IMAPClient
         import email as email_mod
         import tkinter as tk
         from tkinter import scrolledtext
