@@ -95,9 +95,64 @@ class EmailAutomationApp(tk.Tk):
             self.contacts_list.insert('', 'end', values=(email, company, address, phone, contact_name))
 
     def init_messages_tab(self):
-        label = ttk.Label(self.tab_messages, text='Tworzenie i zarządzanie wiadomościami')
-        label.pack(pady=10)
-        # Tu dodamy dalszą logikę i widżety
+        from db.email_templates_manager import EmailTemplatesManager
+        self.templates_manager = EmailTemplatesManager()
+
+        self.template_types = [
+            ('welcome', 'Powitalna z ofertą'),
+            ('reminder', 'Przypominająca'),
+            ('last_offer', 'Ostatnia propozycja')
+        ]
+        self.template_vars = {}
+        self.subject_entries = {}
+        self.body_texts = {}
+        self.days_entries = {}
+
+        for idx, (typ, label) in enumerate(self.template_types):
+            frame = ttk.LabelFrame(self.tab_messages, text=label)
+            frame.pack(fill='x', padx=10, pady=10)
+
+            ttk.Label(frame, text='Temat:').grid(row=0, column=0, sticky='w')
+            subject_entry = ttk.Entry(frame, width=60)
+            subject_entry.grid(row=0, column=1, padx=5, pady=2)
+            self.subject_entries[typ] = subject_entry
+
+            ttk.Label(frame, text='Treść:').grid(row=1, column=0, sticky='nw')
+            body_text = tk.Text(frame, width=60, height=4)
+            body_text.grid(row=1, column=1, padx=5, pady=2)
+            self.body_texts[typ] = body_text
+
+            ttk.Label(frame, text='Dni po poprzedniej:').grid(row=2, column=0, sticky='w')
+            days_entry = ttk.Entry(frame, width=10)
+            days_entry.grid(row=2, column=1, sticky='w', padx=5, pady=2)
+            self.days_entries[typ] = days_entry
+
+            save_btn = ttk.Button(frame, text='Zapisz', command=lambda t=typ: self.save_template(t))
+            save_btn.grid(row=3, column=0, columnspan=2, pady=5)
+
+        self.load_templates()
+
+    def save_template(self, template_type):
+        subject = self.subject_entries[template_type].get().strip()
+        body = self.body_texts[template_type].get('1.0', 'end').strip()
+        try:
+            days = int(self.days_entries[template_type].get().strip())
+        except ValueError:
+            days = 0
+        if subject and body:
+            self.templates_manager.save_template(template_type, subject, body, days)
+
+    def load_templates(self):
+        for typ, _ in self.template_types:
+            tpl = self.templates_manager.get_template(typ)
+            if tpl:
+                subject, body, days = tpl
+                self.subject_entries[typ].delete(0, 'end')
+                self.subject_entries[typ].insert(0, subject)
+                self.body_texts[typ].delete('1.0', 'end')
+                self.body_texts[typ].insert('1.0', body)
+                self.days_entries[typ].delete(0, 'end')
+                self.days_entries[typ].insert(0, str(days))
 
     def init_analytics_tab(self):
         label = ttk.Label(self.tab_analytics, text='Moduł analityczny')

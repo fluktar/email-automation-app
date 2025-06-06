@@ -20,6 +20,23 @@ CREATE TABLE
         added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
+-- Dodanie brakujących kolumn jeśli nie istnieją
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_addresses' AND column_name='company_name') THEN
+        ALTER TABLE email_addresses ADD COLUMN company_name VARCHAR(255);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_addresses' AND column_name='address') THEN
+        ALTER TABLE email_addresses ADD COLUMN address VARCHAR(255);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_addresses' AND column_name='phone') THEN
+        ALTER TABLE email_addresses ADD COLUMN phone VARCHAR(50);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='email_addresses' AND column_name='contact_name') THEN
+        ALTER TABLE email_addresses ADD COLUMN contact_name VARCHAR(255);
+    END IF;
+END$$;
+
 -- Tabela kalendarza wysyłek
 CREATE TABLE
     IF NOT EXISTS email_calendar (
@@ -32,3 +49,13 @@ CREATE TABLE
         response_date TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+-- Szablony wiadomości email
+CREATE TABLE IF NOT EXISTS email_templates (
+    id SERIAL PRIMARY KEY,
+    template_type VARCHAR(50) NOT NULL, -- np. 'welcome', 'reminder', 'last_offer'
+    subject VARCHAR(255) NOT NULL,
+    body TEXT NOT NULL,
+    days_after_previous INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
