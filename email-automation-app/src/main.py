@@ -254,10 +254,13 @@ class EmailAutomationApp(tk.Tk):
             return
         selection = self.steps_listbox.curselection()
         if not selection:
-            self.disable_template_form()
+            # NIE wyłączaj formularza, jeśli current_step_id jest ustawione
             return
         idx = selection[0]
         step = self.steps[idx]
+        if self.current_step_id == step[0]:
+            # Jeśli już wybrany, nie rób nic
+            return
         self.current_step_id = step[0]
         self.show_step_form(step)
 
@@ -360,6 +363,16 @@ class EmailAutomationApp(tk.Tk):
             days = None
         # attachment_path nie jest już używany
         self.steps_manager.update_step(self.current_step_id, subject, body, days, None)
+        # --- ZAPISZ SZABLON POWITALNY DLA PIERWSZEGO KROKU KAMPANII ---
+        # Pobierz wszystkie kroki tej kampanii
+        steps = self.steps_manager.get_steps(self.selected_campaign_id)
+        if steps and steps[0][0] == self.current_step_id:
+            # To jest pierwszy krok, zapisz/aktualizuj szablon powitalny
+            if not hasattr(self, 'templates_manager'):
+                self.templates_manager = EmailTemplatesManager()
+            self.templates_manager.save_template(
+                'welcome', subject, body, days, self.selected_campaign_id, None
+            )
         self.show_message_status('Krok został zapisany!')
         self.load_steps()
 
