@@ -1,12 +1,13 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from db.contacts_manager import ContactsManager
 from db.campaign_steps_manager import CampaignStepsManager
 from db.campaigns_manager import CampaignsManager
 from db.attachments_manager import AttachmentsManager
 from db.attachment_uploader import AttachmentUploader
 from db.campaign_progress_manager import CampaignProgressManager
 from db.email_templates_manager import EmailTemplatesManager
+from controllers.contacts_controller import ContactsController
+from db.contacts_manager import ContactsManager
 import os
 import sys
 import threading
@@ -24,6 +25,7 @@ class EmailAutomationApp(tk.Tk):
         super().__init__()
         self.title("Email Automation App")
         self.geometry("1200x900")
+        self.contacts_controller = ContactsController(self)
         self.create_widgets()
 
     def create_widgets(self):
@@ -33,7 +35,7 @@ class EmailAutomationApp(tk.Tk):
         # Moduł 1: Dodawanie adresów email
         self.tab_addresses = ttk.Frame(notebook)
         notebook.add(self.tab_addresses, text="Adresy email")
-        self.init_addresses_tab()
+        self.contacts_controller.init_addresses_tab()
 
         # Moduł 2: Tworzenie wiadomości
         self.tab_messages = ttk.Frame(notebook)
@@ -44,83 +46,6 @@ class EmailAutomationApp(tk.Tk):
         self.tab_analytics = ttk.Frame(notebook)
         notebook.add(self.tab_analytics, text="Analityka")
         self.init_analytics_tab()
-
-    def init_addresses_tab(self):
-        self.contacts_manager = ContactsManager()
-
-        form_frame = ttk.Frame(self.tab_addresses)
-        form_frame.pack(pady=10, anchor="w")
-
-        ttk.Label(form_frame, text="Email:").grid(row=0, column=0, padx=5, pady=5)
-        self.email_entry = ttk.Entry(form_frame, width=30)
-        self.email_entry.grid(row=0, column=1, padx=5, pady=5)
-
-        ttk.Label(form_frame, text="Nazwa firmy:").grid(row=1, column=0, padx=5, pady=5)
-        self.company_entry = ttk.Entry(form_frame, width=30)
-        self.company_entry.grid(row=1, column=1, padx=5, pady=5)
-
-        ttk.Label(form_frame, text="Adres:").grid(row=2, column=0, padx=5, pady=5)
-        self.address_entry = ttk.Entry(form_frame, width=30)
-        self.address_entry.grid(row=2, column=1, padx=5, pady=5)
-
-        ttk.Label(form_frame, text="Telefon:").grid(row=3, column=0, padx=5, pady=5)
-        self.phone_entry = ttk.Entry(form_frame, width=30)
-        self.phone_entry.grid(row=3, column=1, padx=5, pady=5)
-
-        ttk.Label(form_frame, text="Imię i nazwisko kontaktu:").grid(
-            row=4, column=0, padx=5, pady=5
-        )
-        self.contact_name_entry = ttk.Entry(form_frame, width=30)
-        self.contact_name_entry.grid(row=4, column=1, padx=5, pady=5)
-
-        add_btn = ttk.Button(form_frame, text="Dodaj", command=self.add_contact)
-        add_btn.grid(row=5, column=0, columnspan=2, pady=10)
-
-        self.contacts_list = ttk.Treeview(
-            self.tab_addresses,
-            columns=("email", "company", "address", "phone", "contact_name"),
-            show="headings",
-        )
-        self.contacts_list.heading("email", text="Email")
-        self.contacts_list.heading("company", text="Nazwa firmy")
-        self.contacts_list.heading("address", text="Adres")
-        self.contacts_list.heading("phone", text="Telefon")
-        self.contacts_list.heading("contact_name", text="Imię i nazwisko kontaktu")
-        self.contacts_list.pack(fill="both", expand=True, padx=10, pady=10)
-
-        self.refresh_contacts_list()
-
-    def add_contact(self):
-        email = self.email_entry.get().strip()
-        company = self.company_entry.get().strip()
-        address = self.address_entry.get().strip()
-        phone = self.phone_entry.get().strip()
-        contact_name = self.contact_name_entry.get().strip()
-        if email:
-            self.contacts_manager.add_contact(
-                email, company, address, phone, contact_name
-            )
-            self.email_entry.delete(0, "end")
-            self.company_entry.delete(0, "end")
-            self.address_entry.delete(0, "end")
-            self.phone_entry.delete(0, "end")
-            self.contact_name_entry.delete(0, "end")
-            self.refresh_contacts_list()
-
-    def refresh_contacts_list(self):
-        for row in self.contacts_list.get_children():
-            self.contacts_list.delete(row)
-        for (
-            _id,
-            email,
-            company,
-            address,
-            phone,
-            contact_name,
-        ) in self.contacts_manager.get_contacts():
-            self.contacts_list.insert(
-                "", "end", values=(email, company, address, phone, contact_name)
-            )
 
     def init_messages_tab(self):
         self.steps_manager = CampaignStepsManager()
@@ -513,68 +438,52 @@ class EmailAutomationApp(tk.Tk):
             self.send_status_label.config(text="Błąd: wybierz kampanię!")
             self.after(2000, lambda: self.send_status_label.config(text=""))
             return
-        contacts_manager = ContactsManager()
-        contacts = contacts_manager.get_contacts()
+        contacts = self.contacts_manager.get_contacts()
         progress_rows = self.analytics_progress_manager.get_progress_for_campaign(
             self.selected_analytics_campaign_id
         )
+        # Mapuj email -> row (progress)
         progressed_emails = {row[1]: row for row in progress_rows}
         templates_manager = EmailTemplatesManager()
-        tpl = templates_manager.get_template(
-            "welcome", self.selected_analytics_campaign_id
-        )
-        if not tpl:
-            self.send_status_label.config(text="Brak szablonu powitalnego!")
-            self.after(2000, lambda: self.send_status_label.config(text=""))
-            return
-        subject, body, *_ = tpl
-        steps = self.steps_manager.get_steps(self.selected_analytics_campaign_id)
-        if not steps:
-            self.send_status_label.config(text="Brak kroków w tej kampanii!")
-            self.after(2000, lambda: self.send_status_label.config(text=""))
-            return
-        welcome_step_id = steps[0][0]
-        attachments = self.attachments_manager.get_attachments(welcome_step_id)
-        sent_count = 0
-        # --- WYSYŁKA WSZYSTKICH ETAPÓW KAMPANII ---
         steps = self.steps_manager.get_steps(self.selected_analytics_campaign_id)
         if not steps:
             self.send_status_label.config(text="Brak kroków w tej kampanii!")
             self.after(2000, lambda: self.send_status_label.config(text=""))
             return
         sent_count = 0
-        # Odśwież postęp po każdej wysyłce, by nie wysyłać ponownie do tych samych kontaktów
-        progress_rows = self.analytics_progress_manager.get_progress_for_campaign(
-            self.selected_analytics_campaign_id
-        )
-        progressed_emails = {row[1]: row for row in progress_rows}
         for idx, contact in enumerate(contacts):
             contact_id, email, company, address, phone, contact_name = contact
             row = progressed_emails.get(email)
-            if not row:
-                continue
-            stage = row[3]
-            last_send = row[4]
-            response = row[5]
+            # Jeśli nie ma rekordu postępu, traktuj jako not_sent
+            if row is None:
+                stage = "not_sent"
+                last_send = None
+                response = None
+            else:
+                stage = row[3]
+                last_send = row[4]
+                response = row[5]
             # Nie wysyłaj jeśli kontakt odpowiedział
             if stage == "responded":
                 continue
             # Ustal na którym etapie jest kontakt
-            current_step_idx = 0
-            if stage == "welcome_sent":
+            if stage == "not_sent":
+                current_step_idx = 0
+            elif stage == "welcome_sent":
                 current_step_idx = 1
             elif stage == "reminder_sent":
                 current_step_idx = 2
             elif stage == "last_offer_sent":
                 current_step_idx = 3
+            else:
+                current_step_idx = 0
             # Jeśli jesteśmy poza liczbą kroków, pomiń
             if current_step_idx >= len(steps):
                 continue
-            # Sprawdź czy minęło odpowiednio dużo dni od ostatniej wysyłki
             step = steps[current_step_idx]
             step_id, step_order, name, subject, body, days_after_prev, _ = step
+            # Pierwszy krok: wyślij jeśli not_sent
             if current_step_idx == 0:
-                # Pierwszy krok: wyślij jeśli not_sent
                 if stage == "not_sent":
                     try:
                         self.send_status_label.config(
@@ -616,13 +525,6 @@ class EmailAutomationApp(tk.Tk):
                             now,
                         )
                         sent_count += 1
-                        # Odśwież postęp po zmianie
-                        progress_rows = (
-                            self.analytics_progress_manager.get_progress_for_campaign(
-                                self.selected_analytics_campaign_id
-                            )
-                        )
-                        progressed_emails = {row[1]: row for row in progress_rows}
                     except Exception as e:
                         self.send_status_label.config(
                             text=f"Błąd wysyłki do {email}: {e}"
@@ -690,11 +592,6 @@ class EmailAutomationApp(tk.Tk):
                                 now,
                             )
                             sent_count += 1
-                            # Odśwież postęp po zmianie
-                            progress_rows = self.analytics_progress_manager.get_progress_for_campaign(
-                                self.selected_analytics_campaign_id
-                            )
-                            progressed_emails = {row[1]: row for row in progress_rows}
                         except Exception as e:
                             self.send_status_label.config(
                                 text=f"Błąd wysyłki do {email}: {e}"
