@@ -7,6 +7,16 @@ from db.attachments_manager import AttachmentsManager
 from db.attachment_uploader import AttachmentUploader
 from db.campaign_progress_manager import CampaignProgressManager
 from db.email_templates_manager import EmailTemplatesManager
+import os
+import sys
+import threading
+import datetime
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+from imapclient import IMAPClient
 
 
 class EmailAutomationApp(tk.Tk):
