@@ -735,6 +735,9 @@ class EmailAutomationApp(tk.Tk):
             _id, email_addr, company, stage, last_send, response = row
             if stage != "responded":
                 email_to_contact[email_addr.lower()] = (_id, stage)
+        logging.info(
+            f"Lista kontaktów do sprawdzenia odpowiedzi: {list(email_to_contact.keys())}"
+        )
 
         # Pobierz istniejące kontakty (id)
         contacts_manager = ContactsManager()
@@ -776,10 +779,14 @@ class EmailAutomationApp(tk.Tk):
                                     if isinstance(addr.host, bytes)
                                     else addr.host
                                 )
-                                from_addrs.append(f"{mailbox}@{host}".lower())
+                                from_addr = f"{mailbox}@{host}".lower()
+                                from_addrs.append(from_addr)
                             except Exception as ex:
                                 logging.warning(f"Błąd dekodowania adresu: {ex}")
                                 continue
+                    logging.info(
+                        f"UID {uid}: Nadawcy znalezieni w wiadomości: {from_addrs}"
+                    )
                     for from_addr in from_addrs:
                         if from_addr in email_to_contact:
                             contact_id = email_to_contact[from_addr][0]
