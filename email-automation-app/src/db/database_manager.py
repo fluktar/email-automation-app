@@ -1,12 +1,12 @@
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from sshtunnel import SSHTunnelForwarder
 import psycopg2
 
 
 class DatabaseManager:
     def __init__(self):
-        load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+        load_dotenv(find_dotenv())
         self.ssh_host = os.getenv("SSH_HOST")
         self.ssh_port = int(os.getenv("SSH_PORT", 22))
         self.ssh_user = os.getenv("SSH_USER")
