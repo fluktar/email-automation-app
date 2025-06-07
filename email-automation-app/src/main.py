@@ -471,43 +471,128 @@ class EmailAutomationApp(tk.Tk):
         welcome_step_id = steps[0][0]
         attachments = self.attachments_manager.get_attachments(welcome_step_id)
         sent_count = 0
+        # --- WYSYŁKA WSZYSTKICH ETAPÓW KAMPANII ---
+        steps = self.steps_manager.get_steps(self.selected_analytics_campaign_id)
+        if not steps:
+            self.send_status_label.config(text='Brak kroków w tej kampanii!')
+            self.after(2000, lambda: self.send_status_label.config(text=''))
+            return
+        sent_count = 0
+        # Odśwież postęp po każdej wysyłce, by nie wysyłać ponownie do tych samych kontaktów
+        progress_rows = self.analytics_progress_manager.get_progress_for_campaign(self.selected_analytics_campaign_id)
+        progressed_emails = {row[1]: row for row in progress_rows}
         for idx, contact in enumerate(contacts):
             contact_id, email, company, address, phone, contact_name = contact
             row = progressed_emails.get(email)
-            if not row or row[3] == 'not_sent':
-                try:
-                    self.send_status_label.config(text=f'Wysyłam do: {email} ({idx+1}/{len(contacts)})')
-                    self.update_idletasks()
-                    msg = MIMEMultipart()
-                    msg['From'] = EMAIL_CONFIG['from_address']
-                    msg['To'] = email
-                    msg['Subject'] = subject
-                    msg.attach(MIMEText(body, 'plain'))
-                    for att in attachments:
-                        _, filename, remote_path = att
-                        if os.path.isfile(remote_path):
-                            with open(remote_path, 'rb') as f:
-                                part = MIMEBase('application', 'octet-stream')
-                                part.set_payload(f.read())
-                            encoders.encode_base64(part)
-                            part.add_header('Content-Disposition', f'attachment; filename={filename}')
-                            msg.attach(part)
-                    server = smtplib.SMTP(EMAIL_CONFIG['smtp_server'], EMAIL_CONFIG['smtp_port'])
-                    server.starttls()
-                    server.login(EMAIL_CONFIG['username'], EMAIL_CONFIG['password'])
-                    server.sendmail(EMAIL_CONFIG['from_address'], email, msg.as_string())
-                    server.quit()
-                    self.analytics_progress_manager.add_or_update_progress(
-                        self.selected_analytics_campaign_id, contact_id, 'welcome_sent', None
-                    )
-                    sent_count += 1
-                except Exception as e:
-                    self.send_status_label.config(text=f'Błąd wysyłki do {email}: {e}')
-                    self.update_idletasks()
+            if not row:
+                continue
+            stage = row[3]
+            last_send = row[4]
+            response = row[5]
+            # Nie wysyłaj jeśli kontakt odpowiedział
+            if stage == 'responded':
+                continue
+            # Ustal na którym etapie jest kontakt
+            current_step_idx = 0
+            if stage == 'welcome_sent':
+                current_step_idx = 1
+            elif stage == 'reminder_sent':
+                current_step_idx = 2
+            elif stage == 'last_offer_sent':
+                current_step_idx = 3
+            # Jeśli jesteśmy poza liczbą kroków, pomiń
+            if current_step_idx >= len(steps):
+                continue
+            # Sprawdź czy minęło odpowiednio dużo dni od ostatniej wysyłki
+            step = steps[current_step_idx]
+            step_id, step_order, name, subject, body, days_after_prev, _ = step
+            if current_step_idx == 0:
+                # Pierwszy krok: wyślij jeśli not_sent
+                if stage == 'not_sent':
+                    try:
+                        self.send_status_label.config(text=f'Wysyłam do: {email} ({idx+1}/{len(contacts)})')
+                        self.update_idletasks()
+                        msg = MIMEMultipart()
+                        msg['From'] = EMAIL_CONFIG['from_address']
+                        msg['To'] = email
+                        msg['Subject'] = subject
+                        msg.attach(MIMEText(body, 'plain'))
+                        attachments = self.attachments_manager.get_attachments(step_id)
+                        for att in attachments:
+                            _, filename, remote_path = att
+                            if os.path.isfile(remote_path):
+                                with open(remote_path, 'rb') as f:
+                                    part = MIMEBase('application', 'octet-stream')
+                                    part.set_payload(f.read())
+                                encoders.encode_base64(part)
+                                part.add_header('Content-Disposition', f'attachment; filename={filename}')
+                                msg.attach(part)
+                        server = smtplib.SMTP(EMAIL_CONFIG['smtp_server'], EMAIL_CONFIG['smtp_port'])
+                        server.starttls()
+                        server.login(EMAIL_CONFIG['username'], EMAIL_CONFIG['password'])
+                        server.sendmail(EMAIL_CONFIG['from_address'], email, msg.as_string())
+                        server.quit()
+                        now = datetime.datetime.now()
+                        self.analytics_progress_manager.add_or_update_progress(
+                            self.selected_analytics_campaign_id, contact_id, 'welcome_sent', now
+                        )
+                        sent_count += 1
+                        # Odśwież postęp po zmianie
+                        progress_rows = self.analytics_progress_manager.get_progress_for_campaign(self.selected_analytics_campaign_id)
+                        progressed_emails = {row[1]: row for row in progress_rows}
+                    except Exception as e:
+                        self.send_status_label.config(text=f'Błąd wysyłki do {email}: {e}')
+                        self.update_idletasks()
+            else:
+                # Kolejne kroki: wyślij jeśli minęło odpowiednio dużo dni od last_send
+                if last_send is not None and days_after_prev is not None:
+                    last_send_dt = last_send if isinstance(last_send, datetime.datetime) else datetime.datetime.strptime(str(last_send), '%Y-%m-%d %H:%M:%S')
+                    if (datetime.datetime.now() - last_send_dt).days >= days_after_prev:
+                        try:
+                            self.send_status_label.config(text=f'Wysyłam do: {email} ({idx+1}/{len(contacts)}) - {name}')
+                            self.update_idletasks()
+                            msg = MIMEMultipart()
+                            msg['From'] = EMAIL_CONFIG['from_address']
+                            msg['To'] = email
+                            msg['Subject'] = subject
+                            msg.attach(MIMEText(body, 'plain'))
+                            attachments = self.attachments_manager.get_attachments(step_id)
+                            for att in attachments:
+                                _, filename, remote_path = att
+                                if os.path.isfile(remote_path):
+                                    with open(remote_path, 'rb') as f:
+                                        part = MIMEBase('application', 'octet-stream')
+                                        part.set_payload(f.read())
+                                    encoders.encode_base64(part)
+                                    part.add_header('Content-Disposition', f'attachment; filename={filename}')
+                                    msg.attach(part)
+                            server = smtplib.SMTP(EMAIL_CONFIG['smtp_server'], EMAIL_CONFIG['smtp_port'])
+                            server.starttls()
+                            server.login(EMAIL_CONFIG['username'], EMAIL_CONFIG['password'])
+                            server.sendmail(EMAIL_CONFIG['from_address'], email, msg.as_string())
+                            server.quit()
+                            now = datetime.datetime.now()
+                            # Ustal nowy status
+                            if current_step_idx == 1:
+                                new_stage = 'reminder_sent'
+                            elif current_step_idx == 2:
+                                new_stage = 'last_offer_sent'
+                            else:
+                                new_stage = stage
+                            self.analytics_progress_manager.add_or_update_progress(
+                                self.selected_analytics_campaign_id, contact_id, new_stage, now
+                            )
+                            sent_count += 1
+                            # Odśwież postęp po zmianie
+                            progress_rows = self.analytics_progress_manager.get_progress_for_campaign(self.selected_analytics_campaign_id)
+                            progressed_emails = {row[1]: row for row in progress_rows}
+                        except Exception as e:
+                            self.send_status_label.config(text=f'Błąd wysyłki do {email}: {e}')
+                            self.update_idletasks()
         self.send_status_label.config(text='Wysyłka zakończona!')
         self.load_campaign_progress()
         self.after(3000, lambda: self.send_status_label.config(text=''))
-        messagebox.showinfo('Wysyłka', f'Wysłano {sent_count} powitalnych wiadomości!')
+        messagebox.showinfo('Wysyłka', f'Wysłano {sent_count} wiadomości w tej turze!')
 
     def check_responses(self):
         sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -526,25 +611,31 @@ class EmailAutomationApp(tk.Tk):
             if stage != 'responded':
                 email_to_contact[email_addr.lower()] = (_id, stage)
 
-        # Połącz z IMAP
+        # Sprawdź czy dane IMAP są ustawione
         imap_host = EMAIL_CONFIG.get('imap_server', EMAIL_CONFIG['smtp_server'])
-        imap_user = EMAIL_CONFIG['username']
-        imap_pass = EMAIL_CONFIG['password']
-        with IMAPClient(imap_host, ssl=True) as server:
-            server.login(imap_user, imap_pass)
-            server.select_folder('INBOX')
-            messages = server.search(['UNSEEN'])
-            for uid, message_data in server.fetch(messages, ['ENVELOPE', 'RFC822']).items():
-                envelope = message_data[b'ENVELOPE']
-                from_addr = envelope.from_[0].mailbox.decode() + '@' + envelope.from_[0].host.decode()
-                if from_addr.lower() in email_to_contact:
-                    # Zaktualizuj postęp na 'responded'
-                    contact_id = _id = email_to_contact[from_addr.lower()][0]
-                    self.analytics_progress_manager.add_or_update_progress(
-                        self.selected_analytics_campaign_id, contact_id, 'responded', response_date=datetime.datetime.now()
-                    )
-        self.load_campaign_progress()
-        messagebox.showinfo('Odpowiedzi', 'Sprawdzono odpowiedzi w skrzynce odbiorczej!')
+        imap_user = EMAIL_CONFIG.get('username')
+        imap_pass = EMAIL_CONFIG.get('password')
+        if not imap_host or not imap_user or not imap_pass:
+            messagebox.showerror('Błąd IMAP', 'Brak danych logowania do serwera IMAP w pliku .env lub config.py!')
+            return
+        try:
+            with IMAPClient(imap_host, ssl=True) as server:
+                server.login(imap_user, imap_pass)
+                server.select_folder('INBOX')
+                messages = server.search(['UNSEEN'])
+                for uid, message_data in server.fetch(messages, ['ENVELOPE', 'RFC822']).items():
+                    envelope = message_data[b'ENVELOPE']
+                    from_addr = envelope.from_[0].mailbox.decode() + '@' + envelope.from_[0].host.decode()
+                    if from_addr.lower() in email_to_contact:
+                        # Zaktualizuj postęp na 'responded'
+                        contact_id = _id = email_to_contact[from_addr.lower()][0]
+                        self.analytics_progress_manager.add_or_update_progress(
+                            self.selected_analytics_campaign_id, contact_id, 'responded', response_date=datetime.datetime.now()
+                        )
+            self.load_campaign_progress()
+            messagebox.showinfo('Odpowiedzi', 'Sprawdzono odpowiedzi w skrzynce odbiorczej!')
+        except Exception as e:
+            messagebox.showerror('Błąd IMAP', f'Nie udało się połączyć z serwerem IMAP:\n{e}')
 
     def on_progress_row_double_click(self, event):
         item = self.progress_tree.selection()
