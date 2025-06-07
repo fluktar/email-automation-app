@@ -254,12 +254,10 @@ class EmailAutomationApp(tk.Tk):
             return
         selection = self.steps_listbox.curselection()
         if not selection:
-            # NIE wyłączaj formularza, jeśli current_step_id jest ustawione
             return
         idx = selection[0]
         step = self.steps[idx]
         if self.current_step_id == step[0]:
-            # Jeśli już wybrany, nie rób nic
             return
         self.current_step_id = step[0]
         self.show_step_form(step)
@@ -336,7 +334,6 @@ class EmailAutomationApp(tk.Tk):
             self.body_text.delete('1.0', 'end')
             self.days_entry.delete(0, 'end')
             return
-        # Pobierz dane kroku z self.steps
         step = next((s for s in self.steps if s[0] == self.current_step_id), None)
         if not step:
             self.subject_entry.delete(0, 'end')
@@ -361,17 +358,15 @@ class EmailAutomationApp(tk.Tk):
             days = int(self.days_entry.get().strip())
         except ValueError:
             days = None
-        # attachment_path nie jest już używany
         self.steps_manager.update_step(self.current_step_id, subject, body, days, None)
-        # --- ZAPISZ SZABLON POWITALNY DLA PIERWSZEGO KROKU KAMPANII ---
-        # Pobierz wszystkie kroki tej kampanii
         steps = self.steps_manager.get_steps(self.selected_campaign_id)
         if steps and steps[0][0] == self.current_step_id:
-            # To jest pierwszy krok, zapisz/aktualizuj szablon powitalny
             if not hasattr(self, 'templates_manager'):
                 self.templates_manager = EmailTemplatesManager()
+            # Ustaw days=0 jeśli None dla szablonu powitalnego
+            welcome_days = days if days is not None else 0
             self.templates_manager.save_template(
-                'welcome', subject, body, days, self.selected_campaign_id, None
+                'welcome', subject, body, welcome_days, self.selected_campaign_id, None
             )
         self.show_message_status('Krok został zapisany!')
         self.load_steps()
