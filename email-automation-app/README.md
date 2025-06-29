@@ -1,32 +1,42 @@
-# Email Automation App
+# Modularna aplikacja GUI (TODO, YouTube Downloader, Pogoda, Kalendarz, Notatki)
 
 ## Opis
-Aplikacja do automatyzacji wysyłania wiadomości e-mail, która monitoruje odpowiedzi, wysyła przypomnienia do tych, którzy nie odpowiedzieli, oraz integruje się z bazą danych w celu zarządzania kontaktami.
+
+Nowoczesna, modularna aplikacja desktopowa (Tkinter, Python) z obsługą wielu modułów:
+
+- **TODO** (lista zadań, załączniki, PostgreSQL przez SSH, SFTP)
+- **YouTube Downloader** (GUI, wybór formatu, katalogu, obsługa ffmpeg)
+- **Pogoda** (moduł w przygotowaniu)
+- **Kalendarz/Terminarz** (moduł w przygotowaniu)
+- **Notatki** (moduł w przygotowaniu)
+
+Aplikacja posiada ciemny motyw, nowoczesny wygląd, dynamiczny wybór modułów przez kafelki z ikonami.
 
 ## Struktura projektu
+
 ```
-email-automation-app
-├── src
-│   ├── main.py                # Punkt wejścia aplikacji
-│   ├── email_sender.py        # Klasa do wysyłania wiadomości e-mail
-│   ├── reminder.py            # Klasa do zarządzania przypomnieniami
-│   ├── response_monitor.py     # Klasa do monitorowania odpowiedzi
-│   ├── db
-│   │   ├── __init__.py        # Inicjalizacja modułu bazy danych
-│   │   └── contacts_manager.py # Klasa do zarządzania kontaktami
-│   └── config.py              # Konfiguracje aplikacji
-├── requirements.txt           # Zależności projektu
-└── README.md                  # Dokumentacja projektu
+app/
+├── main.py                # Główny plik uruchamiający aplikację
+├── base_module.py         # Klasa bazowa dla modułów
+├── modules/
+│   ├── todoList/          # Moduł TODO (zadania, załączniki, baza)
+│   ├── ytdownload/        # Moduł YouTube Downloader
+│   ├── weather.py         # Moduł Pogoda (placeholder)
+│   ├── calendar.py        # Moduł Kalendarz (placeholder)
+│   ├── notes.py           # Moduł Notatki (placeholder)
+│   └── ...                # Inne moduły
+└── ...
 ```
 
 ## Instalacja
+
 1. Sklonuj repozytorium:
    ```
    git clone <repo-url>
    ```
 2. Przejdź do katalogu projektu:
    ```
-   cd email-automation-app
+   cd app
    ```
 3. Zainstaluj wymagane biblioteki:
    ```
@@ -34,13 +44,26 @@ email-automation-app
    ```
 
 ## Konfiguracja
-Skonfiguruj plik `src/config.py`, aby ustawić dane logowania do serwera e-mail oraz parametry bazy danych.
+
+- Skonfiguruj pliki środowiskowe `.env` oraz pliki `settings.json`/`user_paths.json` w odpowiednich modułach (np. ytdownload).
+- Ustaw dane do bazy PostgreSQL i SFTP w module TODO (patrz pliki w `modules/todoList`).
 
 ## Użytkowanie
+
 Aby uruchomić aplikację, użyj polecenia:
+
 ```
-python src/main.py
+python -m app.main
 ```
 
+## Funkcje
+
+- Wybór modułu przez nowoczesny panel kafelków z ikonami
+- TODO: lista zadań, załączniki, paginacja, rejestracja/logowanie, PostgreSQL przez SSH, SFTP
+- YouTube Downloader: pobieranie wideo/audio, wybór formatu, katalogu, obsługa ffmpeg
+- Pogoda, Kalendarz, Notatki: placeholdery do dalszej rozbudowy
+- Ciemny motyw, nowoczesny UI
+
 ## Wkład
+
 Wszelkie sugestie i poprawki są mile widziane. Proszę o zgłaszanie problemów lub propozycji zmian w sekcji Issues.
