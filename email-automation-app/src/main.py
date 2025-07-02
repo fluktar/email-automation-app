@@ -21,6 +21,12 @@ import datetime
 import traceback
 from imapclient import IMAPClient
 
+# Dodaj na początku pliku (po importach):
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 class EmailAutomationApp(tk.Tk):
     def __init__(self):
         super().__init__()

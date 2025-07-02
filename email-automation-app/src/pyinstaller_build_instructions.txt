@@ -1,0 +1,47 @@
+# Instrukcja budowania aplikacji .exe z main.py
+
+Aby po kompilacji program działał jako jeden plik .exe i miał dostęp do wszystkich potrzebnych plików, wykonaj poniższe kroki:
+
+1. **Upewnij się, że masz zainstalowany PyInstaller:**
+   
+   ```
+   pip install pyinstaller
+   ```
+
+2. **W katalogu z plikiem main.py uruchom poniższą komendę:**
+   
+   ```
+   pyinstaller --onefile --add-data ".env;." --add-data "db;db" main.py
+   ```
+   - Jeśli masz inne potrzebne pliki lub foldery (np. szablony, pliki konfiguracyjne), dodaj je analogicznie:
+     
+     --add-data "nazwa_folderu;nazwa_folderu"
+     --add-data "plik_konfigu;."
+
+3. **W kodzie korzystaj z uniwersalnej ścieżki do plików:**
+   
+   ```python
+   import sys, os
+   if getattr(sys, 'frozen', False):
+       BASE_DIR = sys._MEIPASS
+   else:
+       BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+   # Przykład użycia:
+   env_path = os.path.join(BASE_DIR, '.env')
+   db_path = os.path.join(BASE_DIR, 'db', 'quotes.db')
+   ```
+
+4. **Po kompilacji plik .exe znajdziesz w folderze dist.**
+   
+   Uruchamiaj go z tego folderu lub przenieś wszystkie potrzebne pliki/foldery do dist, jeśli nie zostały dołączone przez --add-data.
+
+5. **Jeśli pojawi się błąd przy uruchamianiu .exe, uruchom go z wiersza poleceń, aby zobaczyć komunikaty diagnostyczne.**
+
+---
+
+**Podsumowanie najważniejszych opcji PyInstaller:**
+- `--onefile` – jeden plik .exe
+- `--add-data "plik;cel"` – dołącz plik/folder do builda
+- `main.py` – Twój główny plik aplikacji
+
+W razie problemów wklej komunikat błędu, a podpowiem co poprawić.
